@@ -1,0 +1,102 @@
+/* Marca da empresa por projeto (admin/marca.js) — F-V5.
+   Só tokens de :root (app.css); nenhuma cor é declarada aqui. As cores da própria
+   marca (logo e cor do projeto, presets do seletor) chegam por `style` do JS, porque
+   são DADO do cliente e não podem morar numa folha de estilo estática. */
+
+/* ---------------- chip da marca ----------------
+   `.projeto-logo` e `.projeto-iniciais` são definidos no app.css (casca do painel).
+   As regras abaixo estão dentro de :where(), que tem especificidade ZERO: elas servem
+   de piso para quando o chip é desenhado por este módulo em um contexto que a casca
+   não previu, e qualquer regra do app.css — mesmo a mais simples — vence sem precisar
+   de !important. Duas folhas descrevendo o mesmo componente é uma dívida temporária;
+   esta é a forma que não cobra juros. */
+:where(.projeto-logo) {
+  flex: none; width: 24px; height: 24px;
+  border-radius: var(--radius-sm); object-fit: cover;
+  background: var(--surface-2); border: 1px solid var(--line);
+}
+:where(.projeto-iniciais) {
+  flex: none; width: 24px; height: 24px;
+  border-radius: var(--radius-sm);
+  display: inline-grid; place-items: center;
+  font-family: var(--font-display); font-weight: 700; font-size: .68rem;
+  letter-spacing: .02em; line-height: 1;
+  color: var(--on-accent);
+}
+/* Iniciais sobre fundo claro (âmbar, cinza) precisam de tinta escura — a classe é
+   posta pelo JS depois de medir a luminância da cor escolhida, porque a cor é dado. */
+.projeto-iniciais.is-fundo-claro { color: var(--text); }
+
+/* Contêiner que ganhou um chip criado por este módulo. A classe só entra quando NÃO
+   havia slot de marca no lugar — assim marca.css nunca disputa layout com o app.css. */
+.marca-hospeda { display: flex; align-items: center; gap: var(--esp-2); }
+.marca-hospeda > .projeto-logo,
+.marca-hospeda > .projeto-iniciais { align-self: center; }
+
+/* Item da barra lateral: o texto (nome + domínio) continua empilhado ao lado do chip. */
+.project-item.marca-hospeda { flex-wrap: wrap; }
+.project-item.marca-hospeda .p-name { flex: 1; min-width: 0; }
+.project-item.marca-hospeda .p-domain { flex-basis: 100%; }
+
+/* ---------------- cabeçalho do projeto ---------------- */
+.marca-cabecalho { margin-bottom: var(--esp-2); }
+.marca-cabecalho > .projeto-logo,
+.marca-cabecalho > .projeto-iniciais { width: 32px; height: 32px; font-size: .84rem; }
+.marca-cabecalho-btn { padding: .3rem .6rem; font-size: .78rem; }
+
+/* ---------------- seção em Configurações ---------------- */
+.marca-secao { margin-top: var(--esp-5); }
+.marca-lista { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--esp-2); }
+.marca-lista-item {
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  padding: var(--esp-2) var(--esp-3);
+  gap: var(--esp-3);
+}
+.marca-lista-item:hover { border-color: var(--line-2); background: var(--surface-2); }
+.marca-lista-nome { flex: 1; min-width: 0; font-weight: 600; font-size: .9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------------- modal ---------------- */
+.modal--marca { width: min(520px, 94vw); max-height: 88vh; overflow-y: auto; }
+
+.marca-modal-topo { display: flex; align-items: center; gap: var(--esp-5); flex-wrap: wrap; margin-bottom: var(--esp-5); }
+.marca-preview {
+  flex: none; width: 96px; height: 96px;
+  border-radius: var(--radius); border: 1px solid var(--line-2);
+  background: var(--surface-2);
+  display: grid; place-items: center; overflow: hidden;
+}
+/* Dentro do preview o chip ocupa a caixa inteira: aqui a logo é o assunto da tela,
+   não um marcador ao lado de um nome. */
+.marca-preview > .projeto-logo,
+.marca-preview > .projeto-iniciais {
+  width: 100%; height: 100%; border: 0; border-radius: 0;
+  font-size: 2rem;
+}
+.marca-preview > .projeto-logo { object-fit: contain; background: transparent; }
+
+.marca-modal-acoes { flex: 1; min-width: 200px; }
+.marca-modal-botoes { display: flex; align-items: center; gap: var(--esp-2); flex-wrap: wrap; }
+.marca-modal-acoes .desc { margin-top: var(--esp-2); }
+
+/* ---------------- seletor de cor ---------------- */
+.marca-cores { display: flex; flex-wrap: wrap; gap: var(--esp-2); margin: var(--esp-2) 0 var(--esp-3); }
+.marca-cor-preset {
+  width: 30px; height: 30px; padding: 0; cursor: pointer;
+  border: 2px solid transparent; border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-1);
+  transition: transform var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
+}
+.marca-cor-preset:hover { transform: translateY(-1px); }
+.marca-cor-preset:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* A cor selecionada é marcada por um anel neutro: um anel colorido competiria com a
+   própria amostra e, num preset escuro, sumiria. */
+.marca-cor-preset.is-ativa { border-color: var(--text); box-shadow: var(--ring); }
+
+.marca-cor-livre { display: flex; align-items: center; gap: var(--esp-2); flex-wrap: wrap; }
+.marca-cor-livre input[type="color"] {
+  width: 42px; height: 34px; padding: 2px; cursor: pointer;
+  border: 1px solid var(--line-2); border-radius: var(--radius-sm); background: var(--surface);
+}
+.marca-cor-livre input[type="text"] {
+  width: 110px; font-family: var(--font-mono); font-size: .82rem; text-transform: uppercase;
+}

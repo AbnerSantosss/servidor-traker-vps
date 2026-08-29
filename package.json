@@ -1,0 +1,29 @@
+{
+  "name": "servidor-traker",
+  "version": "1.0.0",
+  "description": "Servidor proprio de tracking server-side: recebe eventos first-party do GTM Web e reenvia via Conversions API para Meta, Google e postbacks.",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "worker": "node src/worker.js",
+    "dev": "node --watch src/server.js",
+    "migrate": "node src/db/migrate.js",
+    "seed": "node src/scripts/seed.js",
+    "backfill:analytics": "node src/scripts/backfill-analytics.js",
+    "criar-usuario": "node src/scripts/create-user.js",
+    "test": "node --test --test-concurrency=1 \"test/**/*.test.js\"",
+    "test:unit": "node --test test/unit.test.js",
+    "test:integracao": "node --test test/integracao.test.js",
+    "test:db:up": "docker run -d --name traker-test-db -e POSTGRES_USER=traker -e POSTGRES_PASSWORD=traker -e POSTGRES_DB=traker_test -p 55432:5432 postgres:16-alpine",
+    "test:db:down": "docker rm -f traker-test-db"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "nodemailer": "^9.0.5",
+    "pg": "^8.13.1"
+  }
+}

@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TrackServer · Definir senha</title>
+  <link rel="icon" type="image/svg+xml" href="/assets/marca.svg" />
+  <link rel="stylesheet" href="/app.css" />
+</head>
+<body class="auth-brand">
+  <main class="auth-shell">
+    <div class="auth-card">
+      <div class="auth-marca">
+        <img src="/assets/marca.svg" alt="" width="44" height="44" />
+        <span class="auth-marca-nome">Track<b>Server</b></span>
+      </div>
+
+      <!-- ── Estado 1: validando o token ── -->
+      <div id="stateLoading">
+        <h1 class="auth-title">Verificando o link…</h1>
+        <p class="auth-sub">Só um instante enquanto confirmamos que este convite ainda é válido.</p>
+      </div>
+
+      <!-- ── Estado 2: token inválido / expirado / já usado ── -->
+      <div id="stateInvalid" hidden>
+        <h1 class="auth-title">Link inválido</h1>
+        <p class="auth-sub" id="invalidMsg">
+          Este link expirou ou já foi usado. Cada link de senha vale uma única vez e por tempo limitado.
+        </p>
+        <div class="auth-alert" role="alert">
+          Peça um novo convite ao administrador do painel, ou use <b>“Esqueci minha senha”</b> na tela de login
+          para receber um link novo.
+        </div>
+        <a class="btn btn-primary btn-lg auth-submit" href="/login">Ir para o login</a>
+      </div>
+
+      <!-- ── Estado 3: formulário de senha ── -->
+      <div id="stateForm" hidden>
+        <h1 class="auth-title" id="formTitle">Defina sua senha</h1>
+        <p class="auth-sub" id="formSub"></p>
+
+        <div class="auth-alert" id="formError" role="alert" aria-live="assertive" hidden></div>
+
+        <form id="pwForm" novalidate>
+          <div class="field">
+            <label for="email">E-mail</label>
+            <input type="email" id="email" name="email" autocomplete="username" readonly aria-readonly="true" />
+          </div>
+
+          <div class="field">
+            <label for="password">Nova senha</label>
+            <p class="desc">Mínimo de 8 caracteres. Misture letras, números e símbolos.</p>
+            <div class="pw-wrap">
+              <input type="password" id="password" name="password" autocomplete="new-password" minlength="8" required autofocus />
+              <button type="button" class="pw-toggle" id="btnToggle" aria-pressed="false" aria-label="Mostrar a senha">Mostrar</button>
+            </div>
+            <div class="pw-strength" id="pwStrength" hidden>
+              <div class="pw-meter"><div class="pw-meter-fill" id="pwFill"></div></div>
+              <span class="pw-label" id="pwLabel" aria-live="polite"></span>
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="password2">Confirmar a senha</label>
+            <input type="password" id="password2" name="password2" autocomplete="new-password" minlength="8" required />
+          </div>
+
+          <button class="btn btn-primary btn-lg auth-submit" type="submit" id="btnSubmit">Definir senha e entrar</button>
+        </form>
+
+        <p class="auth-links">
+          <a class="auth-link" href="/login">← Voltar ao login</a>
+        </p>
+      </div>
+
+      <p class="auth-foot">a senha é gravada com hash · o link de convite deixa de valer após o uso</p>
+    </div>
+  </main>
+
+  <script src="/definir-senha.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,170 @@
+/* Dashboard — faixa de KPIs do funil de dinheiro (F-V3).
+   =========================================================================
+   Por que esta faixa é um arquivo próprio e não mais linhas em app.css: ela
+   tem uma regra de hierarquia que nenhum outro lugar do painel tem — um card
+   é maior que os outros de propósito. Isso é decisão de conteúdo, não de
+   componente, e misturá-la com os componentes compartilhados faria qualquer
+   ajuste de card no painel inteiro passar por aqui.
+
+   O diagnóstico que originou a faixa: oito cards idênticos em fila, nenhum
+   dizendo o que importa. Agora a ordem é a do dinheiro (visita → checkout →
+   pix → venda), a venda é o card herói, e os KPIs antigos continuam na tela,
+   uma linha abaixo e em corpo menor. Rebaixar informação é diferente de
+   apagá-la.
+
+   Nenhuma cor literal aqui: tudo sai dos tokens do :root de app.css.
+   ========================================================================= */
+
+/* O #kpiGrid nasceu como uma grade única (app.css). Agora ele carrega DUAS
+   faixas empilhadas, então o id (mais específico que a classe) neutraliza a
+   grade antiga sem precisar editar o arquivo base. */
+#kpiGrid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--esp-3);
+  margin-bottom: var(--esp-5);
+}
+
+/* ---------- linha herói: os seis indicadores do funil ---------- */
+.kpi-funil {
+  display: grid;
+  /* O primeiro card vale por 1,6 dos outros: é a hierarquia acontecendo na
+     grade, não em tamanho de fonte solto. */
+  grid-template-columns: 1.6fr repeat(5, 1fr);
+  gap: var(--esp-2);
+}
+
+.kpi-f {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--esp-3) var(--esp-4);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-1);
+  transition: box-shadow var(--dur-fast) var(--ease-out),
+              border-color var(--dur-fast) var(--ease-out);
+}
+.kpi-f:hover { box-shadow: var(--shadow-2); border-color: var(--line-2); }
+
+.kpi-f-icone {
+  display: grid;
+  place-items: center;
+  width: 28px; height: 28px;
+  flex: none;
+  margin-bottom: var(--esp-1);
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.kpi-f-icone svg { width: 16px; height: 16px; }
+
+.kpi-f-rotulo {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.76rem;
+  font-weight: 550;
+  color: var(--muted);
+  line-height: 1.3;
+}
+
+.kpi-f-valor {
+  font-family: var(--font-display);
+  font-size: 1.375rem;   /* 22px da escala */
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  color: var(--text);
+  /* Número que atualiza sozinho não pode dançar entre um refresh e outro. */
+  font-variant-numeric: tabular-nums;
+}
+
+.kpi-f-sub {
+  font-size: 0.72rem;
+  color: var(--muted-2);
+  line-height: 1.3;
+}
+
+/* ---------- o card herói ---------- */
+/* A venda é a única métrica desta tela que é dinheiro que entrou; todas as
+   outras medem o caminho até ela. Por isso ela ganha corpo maior e a cor da
+   ação — a mesma regra que o design system usa para "receita/vendas = índigo". */
+.kpi-f--heroi { padding: var(--esp-4) var(--esp-5); }
+.kpi-f--heroi .kpi-f-valor { font-size: 2.25rem; color: var(--accent); }
+.kpi-f--heroi .kpi-f-rotulo { font-size: 0.82rem; color: var(--text); font-weight: 600; }
+.kpi-f--heroi .kpi-f-icone { width: 32px; height: 32px; }
+.kpi-f--heroi .kpi-f-icone svg { width: 18px; height: 18px; }
+
+/* ---------- estado de atenção ---------- */
+/* Âmbar significa "atenção" e nada mais neste painel — é o papel que o mundo
+   inteiro dá a ele, e o que a reforma visual devolveu à cor. A borda esquerda
+   grossa é o segundo canal (além da cor), para quem não distingue matiz. */
+.kpi-f--atencao {
+  border-color: var(--warning);
+  background: var(--warning-soft);
+  box-shadow: inset 3px 0 0 var(--warning), var(--shadow-1);
+}
+.kpi-f--atencao .kpi-f-icone { background: var(--surface); color: var(--warning); }
+.kpi-f--atencao .kpi-f-sub { color: var(--warning); }
+
+/* ---------- linha secundária: os KPIs antigos ---------- */
+/* Mesmo componente .kpi de sempre, em corpo menor e com o ícone neutro: eles
+   continuam disponíveis, mas não competem mais com o funil pelo olhar. */
+.kpi-secundarios {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(158px, 1fr));
+  gap: var(--esp-2);
+}
+.kpi-sec { padding: var(--esp-2) var(--esp-3); gap: var(--esp-2); }
+.kpi-sec .kpi-icon {
+  width: 26px; height: 26px;
+  background: var(--surface-2);
+  color: var(--muted);
+}
+.kpi-sec .kpi-icon svg { width: 14px; height: 14px; }
+.kpi-sec .kpi-value { font-size: 1rem; }
+.kpi-sec .kpi-label { font-size: 0.72rem; color: var(--muted-2); }
+
+/* ---------- nota de "poucos dados" ---------- */
+/* Não é um erro nem um aviso: é contexto. Fica em corpo pequeno, acima do
+   gráfico, para explicar por que a série tem três barras soltas em vez de uma
+   curva — sem isso, um gráfico jovem parece um gráfico quebrado. */
+.dash-nota {
+  margin: 0 0 var(--esp-2);
+  padding: var(--esp-2) var(--esp-3);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent-line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+/* ---------- responsivo ---------- */
+/* Em telas médias o herói passa a ocupar a largura inteira e os outros cinco
+   se espalham por baixo: espremer seis cards abaixo de ~1100px transformaria
+   cada valor em duas linhas de texto quebrado. */
+@media (max-width: 1180px) {
+  .kpi-funil { grid-template-columns: repeat(3, 1fr); }
+  .kpi-f--heroi { grid-column: 1 / -1; }
+}
+
+@media (max-width: 700px) {
+  .kpi-funil { grid-template-columns: repeat(2, 1fr); }
+  .kpi-f--heroi .kpi-f-valor { font-size: 1.875rem; }
+  .kpi-secundarios { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* Nota de "sem erros" dentro do bloco de um destino. Não usa `.estado-vazio`
+   porque não é uma tela vazia — é uma linha de texto ao lado de outras, e o
+   componente cheio (40px de respiro, centralizado) empurraria os blocos vizinhos
+   para fora do alinhamento. Verde, não cinza: aqui a ausência de dado é a boa
+   notícia, não uma lacuna. */
+.dash-sem-erros {
+  margin: 2px 0 0; font-size: .84rem; color: var(--ok);
+  display: flex; align-items: center; gap: .3rem;
+}
+.dash-sem-erros::before { content: "✓"; font-weight: 700; }

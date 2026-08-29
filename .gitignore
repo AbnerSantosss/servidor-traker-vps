@@ -1,0 +1,64 @@
+# ---------------------------------------------------------------------------
+# Servidor Traker — arquivos fora do controle de versao
+# ---------------------------------------------------------------------------
+
+# Dependencias (o package-lock.json DEVE ser versionado — e ele que garante
+# build reproduzivel no `npm ci` do Dockerfile).
+node_modules/
+
+# Segredos de ambiente. O .env real nunca vai para o git; o modelo versionado
+# e o .env.example.
+.env
+.env.local
+.env.production
+.env.*
+!.env.example
+
+# Dados de runtime da aplicacao
+data/
+
+# Volumes do Caddy (certificados TLS e chaves de conta ACME). Se estes forem
+# parar em um repositorio publico, as chaves privadas dos certificados vazam.
+caddy_data/
+caddy_config/
+
+# Dumps e backups de banco
+*.sql
+# ...MENOS as migracoes: elas SAO o esquema do banco, nao um backup dele. Sem esta
+# excecao, um clone do repositorio sobe sem nenhuma tabela e a aplicacao nao funciona —
+# e o pior e que a falha so aparece no ambiente novo, nunca na maquina de quem escreveu.
+!src/db/migrations/*.sql
+*.dump
+*.sqlite
+*.sqlite3
+*.bak
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+yarn-error.log*
+
+# Cobertura de testes e caches
+coverage/
+.nyc_output/
+.cache/
+tmp/
+
+# Editores
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Sistema operacional
+.DS_Store
+Thumbs.db
+desktop.ini
+docker-compose.override.yml
+
+# Bloco de variaveis preenchido para colar no Portainer. O modelo versionado e o
+# portainer.env.example (so placeholders). As regras `.env.*` acima
+# NAO cobrem este nome, porque exigem que o arquivo COMECE com ".env".
+portainer.env

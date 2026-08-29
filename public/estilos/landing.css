@@ -1,0 +1,538 @@
+/* Landing pública (`/`) — grafite quente, um acento frio, nada de aurora.
+   =========================================================================
+   Hallmark · macrostrutura: Workbench (duas colunas na primeira dobra) ·
+   tom: utilitário/técnico · matiz âncora: grafite quente (neutro) + acento
+   frio pontual · nav: masthead com filete · rodapé: uma linha.
+
+   POR QUE ESTE ARQUIVO FOI REESCRITO (2026-08-25)
+
+   1. A paleta de texto da banda escura estava DERIVADA dos tokens de tema:
+      `--lp-text: var(--surface)`. Isso funcionava quando o painel era claro
+      (`--surface` era #FFFFFF). Quando o tema escuro virou o padrão do produto,
+      `--surface` passou a #121A2E e o texto da landing virou quase-preto sobre
+      quase-preto — 1.14:1 medido, título e lead invisíveis.
+
+      A lição, e a regra nova: esta página é SEMPRE escura, por decisão de
+      produto. Uma superfície que não acompanha o tema não pode se descrever
+      com tokens que acompanham o tema. Por isso o bloco abaixo redefine os
+      tokens globais LOCALMENTE, com valores literais: a landing passa a ser
+      imune ao tema do painel, e todo componente compartilhado do `app.css`
+      (`.btn`, `.eyebrow`, cards) segue essa paleta sem precisar de override.
+
+   2. A primeira dobra não caberia em tela nenhuma: `min-height` era piso e
+      nada era teto, então logo (230px) + badge + h1 (59px) + lead + CTA + dica
+      empilhados davam 844px de hero dentro de um viewport de 860px — o CTA
+      nascia abaixo da dobra. Agora a dobra é `100svh` de teto e piso, com o
+      conteúdo em duas colunas: a promessa à esquerda, o mecanismo à direita.
+
+   3. Removidos os vícios visuais de geração automática: aurora de três blobs
+      desfocados, grade pontilhada com máscara radial, texto com gradiente
+      ciano→violeta em `background-clip`, glow do PNG da logo sobreposto por
+      `mix-blend-mode`, sombras coloridas de marca, scanline de CRT falso e o
+      LED de "transmitindo" numa página estática. Nenhum deles carregava
+      informação; todos custavam contraste, altura ou os dois.
+
+   A cor de marca (ciano→violeta) continua existindo — no símbolo, que é onde
+   marca mora. O que ela deixou de ser é atmosfera.
+
+   Escopo por `.lp-*` como antes: o `app.css` é compartilhado com o painel.
+   ========================================================================= */
+
+/* ============================================================
+   0 · Tokens da landing — literais e independentes de tema
+   ============================================================
+   Grafite levemente quente em vez de azul-tinta: é o que tira o "tudo azul"
+   sem trocar a identidade do produto. O acento continua o azul de ação do
+   painel, e agora ele é a ÚNICA cor fria da página — o que era ruído virou
+   contraste de temperatura, e o olho vai direto no que é clicável.
+
+   Contrastes medidos sobre o fundo de cada superfície (WCAG 2.1, AA em texto):
+     texto     #F0EEE9  16.3:1 sobre --canvas   ·  ok
+     secundário#B3AEA6   8.6:1                  ·  ok
+     terciário #8F8A82   5.5:1 / 4.9:1 em card  ·  ok (rótulo)
+     acento    #5B9BFF   6.9:1 como texto       ·  ok
+     on-accent #08111F   6.8:1 sobre o acento   ·  ok (medido no app.css) */
+.lp-page {
+  --canvas:    #111110;
+  --surface:   #171716;
+  --surface-2: #1D1D1B;
+  --surface-3: #262623;
+  --line:      #2A2A27;
+  --line-2:    #3A3A36;
+
+  --text:    #F0EEE9;
+  --muted:   #B3AEA6;
+  --muted-2: #8F8A82;
+
+  --accent:       #5B9BFF;
+  --accent-hover: #7AB0FF;
+  --accent-soft:  #17202E;
+  --accent-line:  #2C4C82;
+  --on-accent:    #08111F;
+
+  /* O filete do `.eyebrow` no `app.css` é pintado com `--brand-grad`. Aqui ele
+     vira uma linha sólida: um degradê de 26px de largura é decoração que
+     ninguém consegue ler como marca, e era o último resquício de neon. */
+  --brand-grad: var(--accent);
+
+  /* Papel: o único momento claro da página, reservado à faixa final. Bege
+     quente da mesma família do texto — papel branco puro ao lado de grafite
+     quente parece um furo na tela. */
+  --lp-papel:      #F2EFE9;
+  --lp-papel-tinta:#1A1917;
+
+  /* Sombra de verdade em superfície escura é quase invisível; a elevação vem
+     da borda e da superfície mais clara. Mantidas curtas e neutras — sombra
+     colorida de marca era outro vício. */
+  --shadow-1: 0 1px 2px rgb(0 0 0 / .40);
+  --shadow-2: 0 6px 18px -6px rgb(0 0 0 / .55);
+
+  background-color: var(--canvas);
+  color: var(--text);
+}
+
+/* ============================================================
+   1 · Primeira dobra — uma tela, nem mais nem menos
+   ============================================================
+   `100svh` e não `100vh`: no celular a barra de endereço entra e sai, e `vh`
+   mede a tela SEM ela — o resultado é um hero 60-90px maior que o visível,
+   com o CTA escondido justamente onde a tela é menor. `svh` é a altura
+   pequena, a garantida. O `vh` fica antes como reserva para navegador antigo.
+
+   Grade de duas linhas (nav, conteúdo): o `1fr` da segunda absorve a sobra,
+   então o hero fica centrado no que restou da tela em qualquer altura, sem
+   `margin: auto` nem cálculo em JS. */
+.lp-dark {
+  border-bottom: 1px solid var(--line);
+  min-height: 100vh;
+  min-height: 100svh;
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+
+/* ============================================================
+   2 · Masthead
+   ============================================================
+   Filete embaixo em vez de cápsula flutuante: a barra flutuante com blur é a
+   assinatura visual de todo SaaS gerado dos últimos dois anos, e aqui ela
+   ainda roubava altura da única tela que a página tem. */
+.lp-nav {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--esp-4); flex-wrap: wrap;
+  width: 100%; max-width: var(--maxw); margin: 0 auto;
+  padding: var(--esp-3) var(--esp-5);
+  border-bottom: 1px solid var(--line);
+}
+.lp-nav-links { display: flex; align-items: center; gap: var(--esp-5); }
+.lp-nav-links a:not(.btn) {
+  font-size: .875rem; color: var(--muted);
+  transition: color var(--dur-fast) var(--ease-out);
+}
+.lp-nav-links a:not(.btn):hover { color: var(--text); }
+.lp-nav-links a:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 3px; border-radius: var(--radius-sm);
+}
+
+.lp-marca {
+  display: inline-flex; align-items: center; gap: .55rem;
+  font-family: var(--font-display); font-weight: 650; font-size: 1.0625rem;
+  letter-spacing: -.015em; color: var(--text);
+}
+.lp-marca img { display: block; width: 26px; height: 26px; border-radius: 6px; }
+
+/* ============================================================
+   3 · Hero — promessa à esquerda, mecanismo à direita
+   ============================================================
+   A versão antiga empilhava seis blocos numa coluna de 760px dentro de um
+   container de 1160px: metade da tela vazia à direita e o dobro da altura
+   necessária. Duas colunas resolvem as duas coisas de uma vez, e colocam a
+   explicação do produto DENTRO da primeira tela — que é o único lugar onde
+   ela tem chance de ser lida. */
+.lp-hero {
+  width: 100%; max-width: var(--maxw); margin: 0 auto;
+  padding: var(--esp-6) var(--esp-5);
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr);
+  align-items: center;
+  gap: clamp(var(--esp-5), 5vw, var(--esp-8));
+}
+.lp-hero-conteudo { max-width: 34rem; }
+
+/* Rótulo de categoria: versalete com filete, não cápsula. Ele informa
+   ("server-side", "first-party" são os dois termos que o público procura),
+   então continua; o que saiu foi a pílula com borda arredondada. */
+.lp-badge {
+  display: inline-flex; align-items: center; gap: .6rem;
+  font-family: var(--font-mono); font-size: .7rem; font-weight: 500;
+  letter-spacing: .14em; text-transform: uppercase;
+  color: var(--muted-2);
+}
+.lp-badge::before {
+  content: ""; width: 22px; height: 1px; background: var(--line-2);
+}
+
+/* Escala de texto: teto de 2.75rem (44px) em vez de 3.7rem (59px). O título
+   tem 58 caracteres — na régua de tipografia isso é faixa de display médio,
+   não de display máximo, e o teto antigo custava uma terceira linha. */
+.lp-hero h1 {
+  font-size: clamp(1.75rem, 3.6vw, 2.75rem);
+  line-height: 1.12;
+  letter-spacing: -.022em;
+  font-weight: 680;
+  margin: var(--esp-4) 0 0;
+  color: var(--text);
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+}
+/* O destaque agora é cor sólida do acento. O gradiente em `background-clip`
+   ia de ciano a violeta e, no começo do trecho, ficava a 2:1 do fundo: metade
+   da frase mais importante da página era ilegível por decoração. */
+.lp-hero h1 .lp-hl { color: var(--accent); }
+
+.lp-lead {
+  font-size: 1.0625rem;
+  line-height: 1.6;
+  color: var(--muted);
+  max-width: 32rem;
+  margin: var(--esp-4) 0 0;
+  text-wrap: pretty;
+}
+.lp-lead strong { color: var(--text); font-weight: 600; }
+
+.lp-cta { display: flex; flex-wrap: wrap; gap: var(--esp-3); margin-top: var(--esp-5); }
+
+/* Era `// acesso por e-mail e senha, com convite...` — comentário de código
+   como enfeite tipográfico, numa linha que ninguém lia. Virou nota simples. */
+.lp-hint {
+  font-size: .8125rem; color: var(--muted-2);
+  margin: var(--esp-4) 0 0;
+}
+
+/* Botões na banda escura: o `.btn` do `app.css` já usa os tokens que esta
+   página redefiniu, então sobra pouco. O que sai é o halo colorido embaixo do
+   primário — sombra da cor do botão é brilho, não elevação. */
+.lp-page .btn-ghost { color: var(--text); border-color: var(--line-2); }
+.lp-page .btn-ghost:hover { background: var(--surface-2); color: var(--text); }
+.lp-page .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Entrada do hero: sem JS a página já está completa e visível. O `landing.js`
+   marca `.esta-com-gsap` e só então zera a opacidade. */
+.lp-hero.esta-com-gsap [data-anim] { opacity: 0; }
+
+/* ============================================================
+   4 · Caminho do evento — o diagrama, sem o teatro
+   ============================================================
+   Este painel é a melhor coisa da página: mostra o mecanismo do produto
+   (site → seu servidor → plataformas) sem inventar número nenhum. Ele fica,
+   e agora ocupa a coluna direita da primeira dobra em vez de uma faixa
+   própria de 120px de respiro.
+
+   O que saiu: borda com fio de gradiente, sombra violeta de 80px, overlay de
+   scanline e o LED "transmitindo" piscando — status ao vivo numa página que
+   não tem status nenhum é o tipo de detalhe que mente para o visitante. */
+.lp-sinal { min-width: 0; }
+.lp-sinal-painel {
+  position: relative;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: var(--esp-5);
+  background: var(--surface);
+  box-shadow: var(--shadow-2);
+}
+
+.lp-sinal-head {
+  display: flex; justify-content: space-between; align-items: baseline;
+  gap: var(--esp-3); flex-wrap: wrap; margin-bottom: var(--esp-5);
+  padding-bottom: var(--esp-3);
+  border-bottom: 1px solid var(--line);
+}
+.lp-sinal-head .t {
+  font-family: var(--font-mono); font-size: .72rem; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--muted-2);
+}
+.lp-sinal-head .status {
+  font-family: var(--font-mono); font-size: .72rem; color: var(--muted-2);
+  letter-spacing: .04em;
+}
+
+/* A cadeia é vertical em qualquer largura: três caixas empilhadas, ligadas por
+   um fio de 1px com um ponto descendo. Vertical porque a sequência tem TRÊS
+   etapas e a coluna é estreita — em três colunas, "Meta CAPI · Google" quebrava
+   no meio da palavra a partir de 1080px. */
+.lp-fluxo {
+  list-style: none; margin: 0; padding: 0;
+  display: grid; gap: var(--esp-6);
+}
+.lp-etapa {
+  position: relative;
+  font-family: var(--font-mono);
+  border: 1px solid var(--line-2);
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  padding: .7rem .8rem;
+}
+.lp-etapa .nome { display: block; font-size: .8125rem; color: var(--text); }
+.lp-etapa .sub {
+  display: block; color: var(--muted-2); font-size: .6875rem; margin-top: 3px;
+  letter-spacing: .02em;
+}
+
+/* O fio e o pulso são pseudo-elementos da etapa que os precede: `::after` é o
+   fio dentro do `gap` de 32px, `::before` é o ponto que desce por ele. Zero
+   elemento de decoração no DOM, e o `gap` da grade é a única medida a manter
+   em sincronia (as duas usam --esp-6). */
+.lp-etapa:not(:last-child)::after {
+  content: "";
+  position: absolute; left: 50%; top: 100%;
+  width: 1px; height: var(--esp-6);
+  background: var(--line-2);
+}
+.lp-etapa:not(:last-child)::before {
+  content: "";
+  position: absolute; left: 50%; top: 100%;
+  width: 5px; height: 5px; border-radius: 50%;
+  margin-left: -2px;
+  background: var(--accent);
+  animation: lp-descer 3.2s linear infinite;
+  will-change: transform, opacity;
+}
+.lp-etapa:nth-child(2)::before { animation-delay: 1.1s; }
+
+/* A etapa do meio é o produto: borda de acento e fundo um passo acima — não
+   borda em gradiente com halo violeta de 34px. */
+.lp-etapa-core { border-color: var(--accent-line); background: var(--accent-soft); }
+.lp-etapa-core .sub { color: var(--muted); }
+.lp-etapa-dests .nome { color: var(--muted); }
+
+@keyframes lp-descer {
+  0%   { transform: translateY(0);              opacity: 0; }
+  12%  { opacity: 1; }
+  88%  { opacity: 1; }
+  100% { transform: translateY(var(--esp-6));   opacity: 0; }
+}
+
+.lp-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: var(--esp-5); }
+.lp-chip {
+  font-family: var(--font-mono); font-size: .72rem; color: var(--muted);
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  padding: .28rem .55rem;
+  background: var(--surface-2);
+}
+
+/* ============================================================
+   5 · Dobras de conteúdo
+   ============================================================
+   A banda de conteúdo sobe um passo de luminância em relação à primeira dobra.
+   É o que devolve ritmo à página: antes as "dobras claras" eram claras de
+   verdade, e quando o tema escuro virou padrão elas ficaram idênticas ao hero
+   — 3854px de azul-marinho sem uma única mudança de superfície. */
+.lp-conteudo { background: var(--surface); border-bottom: 1px solid var(--line); }
+
+.lp-bloco {
+  max-width: var(--maxw); margin: 0 auto;
+  padding: var(--esp-8) var(--esp-5);
+}
+.lp-bloco + .lp-bloco { border-top: 1px solid var(--line); }
+.lp-bloco > h2 {
+  font-size: clamp(1.5rem, 2.6vw, 1.9rem);
+  line-height: 1.2; letter-spacing: -.018em; font-weight: 650;
+  margin: var(--esp-3) 0 0; max-width: 30rem;
+  text-wrap: pretty;
+}
+.lp-bloco > .lp-sub {
+  color: var(--muted); max-width: 34rem; margin-top: var(--esp-3);
+  font-size: 1rem;
+}
+
+.lp-passos {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--esp-4); margin-top: var(--esp-6);
+}
+.lp-passo {
+  border: 1px solid var(--line); border-radius: var(--radius);
+  padding: var(--esp-5);
+  background: var(--surface-2);
+}
+.lp-passo .k {
+  font-family: var(--font-mono); font-size: .8rem; font-weight: 600;
+  letter-spacing: .1em; color: var(--muted-2);
+}
+.lp-passo h3 { font-size: 1.0625rem; font-weight: 620; margin: .55rem 0 .4rem; }
+.lp-passo p { color: var(--muted); font-size: .9375rem; margin: 0; }
+
+/* Três colunas no desktop, não duas: com dois cards por linha a lista de seis
+   eventos empurrava a comparação para fora de qualquer tela. */
+.lp-eventos {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--esp-4); margin-top: var(--esp-6);
+}
+.lp-evento {
+  border: 1px solid var(--line); border-radius: var(--radius);
+  padding: var(--esp-4) var(--esp-5) var(--esp-5);
+  background: var(--surface-2);
+  display: flex; flex-direction: column; gap: .4rem;
+  transition: border-color var(--dur-base) var(--ease-out);
+}
+.lp-evento:hover { border-color: var(--line-2); }
+.lp-evento .tok {
+  font-family: var(--font-mono); font-size: .8125rem; color: var(--accent);
+}
+.lp-evento h3 { font-size: 1rem; font-weight: 620; margin: .1rem 0 0; }
+.lp-evento p { color: var(--muted); font-size: .9rem; margin: 0; }
+.lp-evento .maps {
+  margin-top: auto; padding-top: var(--esp-4);
+  display: flex; flex-wrap: wrap; gap: 5px;
+}
+.lp-evento .maps span {
+  font-family: var(--font-mono); font-size: .68rem; color: var(--muted-2);
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  padding: .2rem .45rem;
+}
+.lp-evento-aberto {
+  border-style: dashed; justify-content: center; background: transparent;
+}
+.lp-evento-aberto p { color: var(--muted); }
+
+.lp-compara {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--esp-4); margin-top: var(--esp-6);
+}
+.lp-compara .col {
+  border: 1px solid var(--line); border-radius: var(--radius);
+  padding: var(--esp-5); background: var(--surface-2);
+}
+.lp-compara .col.win { border-color: var(--accent-line); background: var(--accent-soft); }
+.lp-compara .col h3 { font-size: 1rem; font-weight: 620; margin-bottom: var(--esp-4); }
+.lp-compara ul { list-style: none; padding: 0; margin: 0; display: grid; gap: .65rem; }
+.lp-compara li {
+  color: var(--muted); font-size: .9375rem;
+  display: flex; gap: .55rem; align-items: flex-start;
+}
+.lp-compara li::before { content: "–"; color: var(--muted-2); }
+/* Marca de verdade em vez de emoji: `✓` é glifo tipográfico, desenhado pela
+   fonte junto com o resto do texto. */
+.lp-compara .win li::before { content: "✓"; color: var(--accent); font-weight: 700; }
+.lp-compara .win li { color: var(--text); }
+
+/* ============================================================
+   6 · Faixa final — o único papel claro da página
+   ============================================================
+   Inversão deliberada: depois de uma página inteira em grafite, o convite
+   final chega em papel. É a mudança de superfície que carrega o "acabou, e
+   agora é sua vez" — antes era mais um card escuro com dois degradês radiais
+   de marca por trás e um título em forma de pergunta. */
+.lp-faixa { background: var(--lp-papel); color: var(--lp-papel-tinta); }
+.lp-faixa-inner {
+  max-width: var(--maxw); margin: 0 auto;
+  padding: var(--esp-8) var(--esp-5);
+  display: grid; gap: var(--esp-4);
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+.lp-faixa-inner h2 {
+  font-size: clamp(1.375rem, 2.4vw, 1.75rem);
+  line-height: 1.2; letter-spacing: -.018em; font-weight: 650;
+  margin: 0; max-width: 26rem;
+  color: var(--lp-papel-tinta);
+}
+.lp-faixa-inner p {
+  color: color-mix(in srgb, var(--lp-papel-tinta) 72%, var(--lp-papel));
+  margin: 0; max-width: 30rem; font-size: .9375rem;
+  grid-column: 1;
+}
+/* O botão desta faixa vive sobre papel: o acento claro do tema escuro daria
+   2.8:1 aqui. Ele inverte para tinta com texto claro — mesma família, outra
+   luminância, contraste alto nos dois lados. */
+.lp-faixa .btn-primary {
+  --bg: var(--lp-papel-tinta); --fg: var(--lp-papel); --bd: var(--lp-papel-tinta);
+  grid-column: 2; grid-row: 1 / span 2;
+}
+.lp-faixa .btn-primary:hover {
+  --bg: color-mix(in srgb, var(--lp-papel-tinta) 84%, var(--lp-papel));
+  --bd: var(--bg);
+}
+
+/* ============================================================
+   7 · Rodapé
+   ============================================================ */
+.lp-rodape { background: var(--canvas); }
+.lp-rodape .wrap {
+  max-width: var(--maxw); margin: 0 auto;
+  padding: var(--esp-5);
+  display: flex; justify-content: space-between; flex-wrap: wrap; gap: var(--esp-3);
+  color: var(--muted-2); font-size: .8125rem;
+}
+.lp-rodape .mono { font-family: var(--font-mono); }
+
+/* ============================================================
+   8 · Responsivo
+   ============================================================
+   Regra que organiza os cortes: a primeira dobra só é presa a uma tela onde
+   caber em uma tela. Abaixo de 900px o hero vira coluna única e a altura
+   volta a ser natural — forçar `100svh` num celular é como se produz texto
+   apertado e botão colado no rodapé. */
+@media (max-width: 1080px) {
+  .lp-eventos { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 900px) {
+  .lp-dark { min-height: 0; display: block; }
+  .lp-hero {
+    grid-template-columns: minmax(0, 1fr);
+    padding: var(--esp-6) var(--esp-5) var(--esp-7);
+    gap: var(--esp-6);
+  }
+  .lp-hero-conteudo { max-width: none; }
+  .lp-passos, .lp-compara { grid-template-columns: minmax(0, 1fr); }
+  .lp-faixa-inner { grid-template-columns: minmax(0, 1fr); }
+  .lp-faixa .btn-primary { grid-column: 1; grid-row: auto; justify-self: start; }
+}
+
+@media (max-width: 620px) {
+  /* Alvo de toque: o `.btn-lg` do painel tem 42px de altura, que é o suficiente
+     para mouse e 2px a menos que o mínimo confortável para dedo. Só na landing
+     e só no celular, porque é o único lugar onde o toque é a regra. */
+  .lp-page .btn-lg { min-height: 44px; }
+
+  .lp-nav { padding: var(--esp-3) var(--esp-4); }
+  .lp-nav-links { gap: var(--esp-4); }
+  .lp-nav-links a:not(.btn) { display: none; }   /* âncoras somem; o CTA fica */
+  .lp-hero, .lp-bloco, .lp-faixa-inner, .lp-rodape .wrap {
+    padding-left: var(--esp-4); padding-right: var(--esp-4);
+  }
+  .lp-bloco { padding-top: var(--esp-7); padding-bottom: var(--esp-7); }
+  .lp-eventos { grid-template-columns: minmax(0, 1fr); }
+  /* A cadeia já é vertical em qualquer largura; aqui só o fio encurta, para o
+     painel não virar uma coluna de ar em tela pequena. */
+  .lp-fluxo { gap: var(--esp-5); }
+  .lp-etapa:not(:last-child)::after { height: var(--esp-5); }
+  @keyframes lp-descer {
+    0%   { transform: translateY(0);            opacity: 0; }
+    12%  { opacity: 1; }
+    88%  { opacity: 1; }
+    100% { transform: translateY(var(--esp-5)); opacity: 0; }
+  }
+}
+
+/* ============================================================
+   9 · Aba oculta — tudo congela
+   ============================================================
+   O GSAP é pausado no JS; as animações CSS precisam desta classe. Animar o
+   que ninguém está vendo só gasta bateria de quem foi fazer outra coisa. */
+.lp-pausado *,
+.lp-pausado *::before,
+.lp-pausado *::after { animation-play-state: paused !important; }
+
+/* ============================================================
+   10 · prefers-reduced-motion
+   ============================================================
+   Os pontos param a meio caminho do fio: a leitura "há sinal indo daqui para
+   lá" se mantém sem nada se mexer. */
+@media (prefers-reduced-motion: reduce) {
+  .lp-etapa:not(:last-child)::before {
+    animation: none !important;
+    opacity: 1;
+    transform: translateY(calc(var(--esp-6) / 2));
+  }
+  .lp-hero.esta-com-gsap [data-anim] { opacity: 1; }
+}

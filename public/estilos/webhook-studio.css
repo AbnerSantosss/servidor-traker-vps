@@ -1,0 +1,296 @@
+/* Webhook Studio (F4/F5): inbox de amostras, editor de mapeamento em 3 colunas e o
+   modo com IA (OpenRouter). Reaproveita ao máximo o que já existe em app.css (.btn,
+   .callout, .field, .modal, .pill, .modo-switch, .destino-grid, .kv, .json-view,
+   .table-wrap, .skeleton, .estado-vazio) — só o que é GENUINAMENTE novo desta tela
+   entra aqui.
+
+   F-V4: o arquivo nasceu no tema escuro (dourado + fundos `rgba(255,255,255,.02)`) e
+   sobrevivia por remapeamento dos aliases (--amber/--ink/--teal). Agora não há mais
+   nenhuma cor cravada nem alias: tudo sai dos tokens do :root de app.css. A regra que
+   guiou a conversão: superfície editável é a mais clara da tela (--surface), fundo de
+   coluna/painel é --surface-2, e a única cor de ação é o índigo (--accent). */
+
+.studio-secao { margin-bottom: 34px; }
+.studio-secao-h {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  flex-wrap: wrap; margin-bottom: 10px;
+}
+.studio-secao-h h4 { margin: 0; display: flex; align-items: center; gap: 6px; }
+.studio-secao-d { color: var(--muted); font-size: .88rem; margin: 0 0 14px; max-width: 74ch; }
+
+/* ---------------- Inbox: tabela no padrão global ---------------------------------
+   Era um acordeão de <details> reaproveitado da tela de falhas. Amostra de webhook é
+   inventário — formato, quantidade, quando chegou —, e inventário se lê em tabela:
+   dá para comparar as linhas de relance, o que o acordeão fechado não permitia. O
+   payload continua acessível, numa linha de detalhe que abre sob a amostra. */
+.studio-inbox-formato {
+  font-family: var(--font-mono); font-size: .82rem; color: var(--text);
+  word-break: break-all;
+}
+.studio-inbox-acoes-col { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+.studio-inbox-acoes-col .btn { padding: .3rem .6rem; font-size: .76rem; }
+
+/* Linha de detalhe: ocupa a largura toda da tabela e não recebe o zebrado, para ler
+   como "continuação da linha acima" em vez de como mais uma amostra. */
+.studio-inbox-detalhe > td { background: var(--surface-2) !important; padding: 0; }
+.studio-inbox-detalhe-corpo { padding: 12px 14px; }
+
+.studio-inbox-amostra-json { max-height: 260px; margin: 0; }
+.studio-inbox-acoes { display: flex; gap: 8px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+
+/* ---------------- JSON legível em tema claro -------------------------------------
+   O realce anterior era um único tom dourado sobre fundo preto. Em papel branco isso
+   vira um borrão; aqui cada tipo de valor tem a sua cor semântica, com a mesma
+   convenção que o `.codebox` de app.css já usava (chave em --info, texto em --ok). */
+.studio-json .c-key  { color: var(--info); }
+.studio-json .c-str  { color: var(--ok); }
+.studio-json .c-num  { color: var(--accent); font-variant-numeric: tabular-nums; }
+/* `true`/`false` no realce de JSON: cor da paleta de dados, não da marca — é
+   sintaxe, e a marca não pinta componente. */
+.studio-json .c-bool { color: var(--dado-3); font-weight: 600; }
+.studio-json .c-null { color: var(--muted-2); font-style: italic; }
+.studio-json .c-pon  { color: var(--muted-2); }
+
+/* ---------------- Lista de adaptadores salvos ------------------------------------ */
+.studio-adapt-lista { display: flex; flex-direction: column; gap: 8px; }
+.studio-adapt-item {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 10px 14px;
+  background: var(--surface);
+  transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+}
+.studio-adapt-item:hover { border-color: var(--line-2); box-shadow: var(--shadow-1); }
+.studio-adapt-nome { font-weight: 600; margin-right: auto; color: var(--text); }
+.studio-adapt-meta { color: var(--muted); font-size: .8rem; }
+
+/* ---------------- Editor --------------------------------------------------------- */
+.studio-editor {
+  border: 1px solid var(--line); border-radius: var(--radius); padding: 18px 20px 22px;
+  background: var(--surface); box-shadow: var(--shadow-1); margin-top: 6px;
+}
+.studio-editor-topo {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;
+  flex-wrap: wrap; margin-bottom: 16px;
+}
+.studio-editor-titulo { display: flex; flex-direction: column; gap: 2px; }
+.studio-editor-titulo input[type="text"] {
+  font-size: 1.02rem; font-weight: 600; background: transparent; border: 1px solid transparent;
+  border-bottom: 1px solid var(--line-2); border-radius: 0; padding: .2rem 0; color: var(--text);
+  min-width: 260px;
+}
+.studio-editor-titulo input[type="text"]:focus { outline: none; border-bottom-color: var(--accent); }
+
+/* Amostra de trabalho: fonte que alimenta a árvore e a prévia */
+.studio-amostra-picker { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+.studio-amostra-picker label { font-size: .84rem; font-weight: 600; color: var(--text); }
+.studio-amostra-picker select {
+  min-width: 260px; font-family: var(--font-body); font-size: .88rem; color: var(--text);
+  background: var(--surface); border: 1px solid var(--line-2); border-radius: var(--radius-sm);
+  padding: .45rem .6rem; cursor: pointer;
+}
+.studio-amostra-picker select:hover { border-color: var(--muted-2); }
+.studio-amostra-picker select:focus { outline: none; border-color: var(--accent); box-shadow: var(--ring); }
+.studio-amostra-manual { margin-top: 8px; }
+.studio-amostra-manual textarea {
+  width: 100%; min-height: 120px; font-family: var(--font-mono); font-size: .82rem;
+  background: var(--surface); color: var(--text); border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm); padding: 10px 12px; resize: vertical;
+}
+.studio-amostra-manual textarea:focus { outline: none; border-color: var(--accent); box-shadow: var(--ring); }
+
+/* Alvo ativo do "clique para inserir" — barra fina, sempre visível no topo da árvore */
+.studio-alvo-bar {
+  font-size: .78rem; color: var(--muted); border: 1px dashed var(--accent-line);
+  border-radius: var(--radius-sm); padding: 7px 10px; margin-bottom: 10px;
+  background: var(--accent-soft);
+}
+.studio-alvo-bar b { color: var(--accent); }
+
+.studio-grid {
+  display: grid; grid-template-columns: minmax(220px, 280px) minmax(320px, 1fr) minmax(280px, 340px);
+  gap: 18px; align-items: start;
+}
+@media (max-width: 980px) {
+  .studio-grid { grid-template-columns: 1fr; }
+}
+
+.studio-col {
+  border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 12px 14px;
+  background: var(--surface-2); min-width: 0;
+}
+.studio-col-h {
+  font-size: .75rem; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--muted-2); margin: 0 0 10px; font-weight: 600;
+}
+
+/* ---------------- Coluna esquerda: árvore clicável do payload --------------------- */
+.studio-arvore { max-height: 62vh; overflow: auto; font-family: var(--font-mono); font-size: .8rem; }
+.studio-arvore ul { list-style: none; margin: 0; padding-left: 14px; }
+.studio-arvore > ul { padding-left: 0; }
+.studio-arvore li { margin: 2px 0; }
+.studio-arvore-chave { color: var(--info); }
+.studio-arvore-leaf {
+  display: inline-flex; align-items: baseline; gap: 6px; background: none;
+  border: 1px solid transparent; padding: 1px 4px;
+  border-radius: 5px; color: var(--text); font: inherit; text-align: left; cursor: pointer; max-width: 100%;
+  transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
+}
+.studio-arvore-leaf:hover { background: var(--accent-soft); border-color: var(--accent-line); }
+.studio-arvore-leaf:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* A cor vem das classes de tipo (.c-str/.c-num/.c-bool/.c-null) aplicadas pelo JS —
+   aqui fica só a quebra, para um valor longo não estourar a coluna. */
+.studio-arvore-valor { word-break: break-all; }
+.studio-arvore-vazio { color: var(--muted-2); font-style: italic; }
+
+/* ---------------- Coluna central: regras + evento + detecção ---------------------- */
+.studio-regras { display: flex; flex-direction: column; gap: 10px; margin-bottom: 6px; }
+.studio-regra {
+  border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 10px 12px;
+  display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: flex-end; background: var(--surface);
+}
+.studio-regra label {
+  display: block; font-size: .7rem; color: var(--muted-2); margin-bottom: 3px;
+  text-transform: uppercase; letter-spacing: .06em; font-weight: 600;
+}
+.studio-regra input[type="text"], .studio-regra select, .studio-regra textarea {
+  background: var(--surface); border: 1px solid var(--line-2); border-radius: 6px; color: var(--text);
+  padding: .35rem .5rem; font-size: .82rem; font-family: var(--font-mono);
+  transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+}
+.studio-regra input[type="text"]:hover:not(:disabled),
+.studio-regra select:hover:not(:disabled),
+.studio-regra textarea:hover:not(:disabled) { border-color: var(--muted-2); }
+.studio-regra input[type="text"]:focus, .studio-regra select:focus, .studio-regra textarea:focus {
+  outline: none; border-color: var(--accent); box-shadow: var(--ring);
+}
+.studio-regra input[type="text"]:disabled, .studio-regra select:disabled, .studio-regra textarea:disabled {
+  background: var(--surface-2); color: var(--muted-2); cursor: not-allowed; border-color: var(--line);
+}
+.studio-regra input[aria-invalid="true"] { border-color: var(--danger); }
+.studio-regra textarea { min-height: 46px; resize: vertical; font-family: var(--font-mono); width: 168px; }
+.studio-regra-de { min-width: 168px; }
+.studio-regra-seta { align-self: center; color: var(--muted-2); padding-bottom: 6px; }
+.studio-regra-para { min-width: 168px; }
+.studio-regra-transf { min-width: 168px; }
+.studio-regra-args { display: flex; gap: 8px; flex-wrap: wrap; }
+.studio-regra-remover { margin-left: auto; }
+
+.studio-caminho-btn {
+  border: 1px solid var(--line-2); background: var(--surface); color: var(--muted); border-radius: 6px;
+  padding: .3rem .4rem; cursor: pointer; line-height: 1;
+  transition: color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
+}
+.studio-caminho-btn:hover { color: var(--accent); border-color: var(--accent); }
+.studio-caminho-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.studio-campo-com-botao { display: flex; gap: 4px; align-items: flex-end; }
+
+.studio-dicionario { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; }
+.studio-dic-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.studio-dic-row input[type="text"] {
+  background: var(--surface); border: 1px solid var(--line-2); border-radius: 6px; color: var(--text);
+  padding: .3rem .5rem; font-size: .8rem; font-family: var(--font-mono); min-width: 140px; flex: 1;
+}
+.studio-dic-row select {
+  background: var(--surface); border: 1px solid var(--line-2); border-radius: 6px; color: var(--text);
+  padding: .3rem .5rem; font-size: .78rem; cursor: pointer;
+}
+.studio-dic-row input[type="text"]:focus, .studio-dic-row select:focus {
+  outline: none; border-color: var(--accent); box-shadow: var(--ring);
+}
+/* Estado de erro do campo, no mesmo par do resto do painel: borda vermelha + a
+   mensagem ao lado (.studio-dic-aviso). A cor nunca viaja sozinha. */
+.studio-dic-row input[aria-invalid="true"] { border-color: var(--danger); }
+.studio-dic-row input[aria-invalid="true"]:focus { box-shadow: 0 0 0 3px var(--danger-soft); }
+.studio-dic-condicional { display: flex; gap: 6px; flex-wrap: wrap; flex: 1; }
+/* Aviso da regra dura (nada vira `purchase` por acidente): cor + ícone, nunca cor
+   sozinha — quem não distingue vermelho lê o triângulo e o texto. */
+.studio-dic-aviso {
+  display: flex; align-items: center; gap: .35rem;
+  color: var(--danger); font-size: .74rem; width: 100%;
+}
+.studio-dic-aviso svg { width: 13px; height: 13px; flex: none; }
+
+.studio-evento-bloco, .studio-deteccao { border-top: 1px solid var(--line); padding-top: 14px; margin-top: 14px; }
+.studio-evento-bloco h5, .studio-deteccao h5 {
+  display: flex; align-items: center; gap: 6px; margin: 0 0 8px; font-size: .92rem;
+  font-family: var(--font-display); color: var(--text);
+}
+
+.studio-chips-grupo { margin-bottom: 12px; }
+.studio-chips-grupo > label { display: block; font-size: .78rem; color: var(--muted); margin-bottom: 5px; }
+.studio-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.studio-chip {
+  display: inline-flex; align-items: center; gap: 5px; font-family: var(--font-mono); font-size: .76rem;
+  border: 1px solid var(--line-2); border-radius: 6px; padding: .18rem .35rem .18rem .55rem;
+  color: var(--text); background: var(--surface);
+}
+.studio-chip button {
+  background: none; border: none; color: var(--muted-2); cursor: pointer;
+  padding: 0 2px; font-size: .9rem; line-height: 1; border-radius: 3px;
+}
+.studio-chip button:hover { color: var(--danger); }
+.studio-chip button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.studio-chip-add { display: flex; gap: 6px; }
+.studio-chip-add input {
+  flex: 1; background: var(--surface); border: 1px solid var(--line-2); border-radius: 6px; color: var(--text);
+  padding: .3rem .5rem; font-size: .8rem; font-family: var(--font-mono);
+}
+.studio-chip-add input:focus { outline: none; border-color: var(--accent); box-shadow: var(--ring); }
+.studio-deteccao-contagem {
+  display: flex; align-items: flex-start; gap: .35rem;
+  font-size: .76rem; color: var(--muted); margin-top: 2px;
+}
+.studio-deteccao-contagem svg { width: 13px; height: 13px; flex: none; margin-top: 2px; }
+.studio-deteccao-contagem.is-fraca { color: var(--danger); }
+
+/* ---------------- Coluna direita: prévia ao vivo ----------------------------------- */
+.studio-preview-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.studio-preview-erros { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+.studio-preview-erro {
+  display: flex; align-items: flex-start; gap: .4rem;
+  border: 1px solid var(--danger-line); background: var(--danger-soft); color: var(--danger);
+  border-radius: var(--radius-sm); padding: 8px 10px; font-size: .82rem; line-height: 1.45;
+}
+.studio-preview-erro svg { width: 14px; height: 14px; flex: none; margin-top: 3px; }
+/* Contraparte positiva do erro acima: "a detecção reconheceria esta amostra" é boa
+   notícia e não pode ler como o cinza de "não sei te dizer nada". */
+.studio-preview-ok {
+  display: flex; align-items: flex-start; gap: .4rem;
+  border: 1px solid var(--ok-line); background: var(--ok-soft); color: var(--ok);
+  border-radius: var(--radius-sm); padding: 8px 10px; font-size: .82rem; line-height: 1.45; margin: 0 0 12px;
+}
+.studio-preview-ok svg { width: 14px; height: 14px; flex: none; margin-top: 3px; }
+.studio-preview-json { max-height: 260px; }
+
+/* ---------------- Rodapé: nome/ativo/modo/salvar ----------------------------------- */
+.studio-editor-footer { border-top: 1px solid var(--line); margin-top: 18px; padding-top: 16px; }
+
+/* ---------------- Toggle Nativamente x Com IA (reaproveita .modo/.modo-switch) ----- */
+.studio-toggle-metodo { margin-bottom: 16px; }
+
+.studio-ia-painel {
+  border: 1px solid var(--accent-line); border-radius: var(--radius-sm);
+  padding: 14px 16px; margin-bottom: 18px; background: var(--accent-soft);
+}
+.studio-ia-modelo-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.studio-ia-modelo-row input[type="text"] { flex: 1; min-width: 200px; }
+.studio-ia-uso { font-size: .82rem; color: var(--muted); margin: 10px 0; }
+.studio-ia-uso b { color: var(--text); }
+.studio-ia-selo { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: .82rem; color: var(--muted); }
+
+/* Confirmação inline (o painel não usa confirm() nativo — mesmo espírito de
+   dominios.js/console-teste.js, versão própria para não depender de classe de outra tela) */
+.studio-confirm {
+  border: 1px solid var(--warning-line); background: var(--warning-soft);
+  border-radius: var(--radius-sm); padding: 8px 10px; margin-top: 8px;
+  display: flex; align-items: center; gap: 10px; font-size: .85rem; flex-wrap: wrap;
+  color: var(--text);
+}
+.studio-confirm .btn { padding: .34rem .65rem; font-size: .78rem; }
+
+/* Modal de consentimento do modo "IA por evento" */
+.studio-consentimento-lista {
+  margin: 12px 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px;
+  font-size: .88rem; color: var(--muted);
+}
+.studio-consentimento-lista li b { color: var(--text); }

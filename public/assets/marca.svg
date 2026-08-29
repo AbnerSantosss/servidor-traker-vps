@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 44 44" role="img" aria-label="TrackServer">
+  <!-- O "chip" da marca: o símbolo em gradiente sobre um quadrado escuro.
+       Existe por um motivo concreto — a identidade é neon (ciano→violeta) e o
+       painel é claro; gradiente claro sobre fundo branco perde contraste e some.
+       O chip devolve ao símbolo o fundo escuro de que ele precisa, sem escurecer
+       a interface inteira. Usado em favicon, login, topbar e sidebar. -->
+  <defs>
+    <linearGradient id="tsg44" x1="8" y1="36" x2="36" y2="8" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#22D3EE"/>
+      <stop offset="1" stop-color="#8B5CF6"/>
+    </linearGradient>
+  </defs>
+  <rect width="44" height="44" rx="11" fill="#0B0F1A"/>
+  <rect x="0.6" y="0.6" width="42.8" height="42.8" rx="10.4" fill="none" stroke="url(#tsg44)" stroke-opacity="0.45"/>
+  <g transform="translate(6 6) scale(1)">
+    <g fill="none" stroke="url(#tsg44)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 22 L9 16 L14.5 19.5 L22.5 8"/>
+      <path d="M18.5 7.5 L23 7 L22.5 11.5"/>
+    </g>
+    <g fill="url(#tsg44)">
+      <circle cx="3" cy="22" r="2.2"/>
+      <circle cx="9" cy="16" r="2.2"/>
+      <circle cx="14.5" cy="19.5" r="2.2"/>
+    </g>
+    <g fill="none" stroke="url(#tsg44)" stroke-width="1.7" stroke-linecap="round" opacity="0.95">
+      <path d="M21 20.5 h8"/>
+      <path d="M21 24.5 h8"/>
+      <path d="M21 28.5 h8"/>
+    </g>
+  </g>
+</svg>

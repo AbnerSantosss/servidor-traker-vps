@@ -1,0 +1,186 @@
+/* Estilos da aba "Ao vivo" (admin/tempo-real.js). Reaproveita os tokens já definidos em
+   :root por app.css (não redeclara cor nenhuma) — só descreve o layout do feed.
+
+   F-V4: as cores cravadas do tema escuro (o dourado da marca antiga e os alfas de
+   branco sobre branco, que sumiam num fundo claro) saíram. Cada estado empresta o par
+   semântico correspondente — sucesso/atenção/erro/informação —, exatamente o mesmo que
+   os badges globais do painel usam, para o operador não precisar aprender duas
+   linguagens de cor no mesmo produto. */
+
+/* ---------------- régua superior ---------------- */
+.aovivo-topo {
+  display: flex; align-items: center; gap: 22px; flex-wrap: wrap;
+  padding: 14px 16px; margin-bottom: 14px;
+  border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface);
+}
+
+.aovivo-contadores { display: flex; align-items: center; gap: 22px; }
+.aovivo-contador { display: flex; flex-direction: column; gap: 1px; min-width: 74px; }
+.aovivo-contador-valor {
+  font-family: var(--font-display); font-size: 1.2rem; font-weight: 700;
+  letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: var(--text);
+}
+.aovivo-contador-rotulo { font-size: 0.72rem; color: var(--muted-2); text-transform: uppercase; letter-spacing: .06em; }
+
+.aovivo-spark-wrap { display: flex; flex-direction: column; gap: 2px; width: 168px; flex: none; }
+.aovivo-spark { width: 168px; height: 40px; }
+.aovivo-spark-rotulo { font-size: 0.7rem; text-align: center; color: var(--muted-2); }
+
+/* O indicador é o instrumento mais lido da tela ("está chegando dado agora?"), então
+   saiu da monoespaçada: aqui ela só encolhia a altura de x sem nenhum ganho de
+   alinhamento — não há número para alinhar. */
+.aovivo-indicador {
+  display: flex; align-items: center; gap: 7px; margin-left: auto;
+  font-family: var(--font-body); font-size: .82rem; font-weight: 600;
+  padding: .35rem .7rem; border-radius: var(--radius-sm); border: 1px solid var(--line-2);
+  background: var(--surface-2); color: var(--muted);
+}
+.aovivo-indicador-ponto { width: 8px; height: 8px; border-radius: 50%; background: var(--muted-2); flex: none; }
+/* Cor + texto próprio de cada estado: quem não separa verde de âmbar continua lendo
+   "ao vivo" / "reconectando…" / "polling (10s)". A cor é reforço, não o recado. */
+.aovivo-indicador[data-estado="ao-vivo"] { color: var(--ok); border-color: var(--ok-line); background: var(--ok-soft); }
+.aovivo-indicador[data-estado="ao-vivo"] .aovivo-indicador-ponto { background: var(--ok); animation: aovivoPulso 1.6s var(--ease-in-out) infinite; }
+.aovivo-indicador[data-estado="reconectando"] { color: var(--warning); border-color: var(--warning-line); background: var(--warning-soft); }
+.aovivo-indicador[data-estado="reconectando"] .aovivo-indicador-ponto { background: var(--warning); animation: aovivoPisca 1s steps(1) infinite; }
+.aovivo-indicador[data-estado="polling"] { color: var(--info); border-color: var(--info-line); background: var(--info-soft); }
+.aovivo-indicador[data-estado="polling"] .aovivo-indicador-ponto { background: var(--info); }
+
+@keyframes aovivoPulso { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .45; transform: scale(.72); } }
+@keyframes aovivoPisca { 0%, 49% { opacity: 1; } 50%, 100% { opacity: .25; } }
+
+/* ---------------- controles ---------------- */
+.aovivo-controles { display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
+.aovivo-btn-novos {
+  margin-left: auto; animation: aovivoEntrarBaixo var(--dur-base) var(--ease-out);
+}
+/* Estado "ativo" do botão de pausa: o painel inteiro marca seleção com o par
+   accent-soft/accent-line, e um toggle que fica pintado de outra cor leria como um
+   botão diferente em vez do mesmo botão ligado. */
+.btn.is-ativo { --bg: var(--accent-soft); --bd: var(--accent-line); --fg: var(--accent); box-shadow: none; }
+.btn.is-ativo:hover { --bg: var(--accent-soft); --bd: var(--accent); }
+
+.aovivo-legenda { display: flex; gap: 18px; flex-wrap: wrap; margin-bottom: 10px; font-size: .78rem; color: var(--muted); }
+.aovivo-legenda span { display: inline-flex; align-items: center; gap: 2px; }
+
+/* ---------------- corpo: feed + painel lateral ---------------- */
+.aovivo-corpo { display: grid; grid-template-columns: 1fr; gap: 16px; align-items: start; }
+.aovivo-corpo:has(.aovivo-detalhe:not([hidden])) { grid-template-columns: minmax(0,1fr) 360px; }
+
+.aovivo-feed {
+  display: flex; flex-direction: column; gap: 8px;
+  max-height: calc(100vh - 300px); min-height: 240px; overflow-y: auto;
+  padding-right: 4px;
+}
+/* Enquanto a conexão não abre, o feed mostra silhuetas de card em vez de um vazio que
+   pisca — a altura já é a do card real, então nada salta quando o evento chega. */
+.aovivo-skeleton-card { height: 86px; border-radius: var(--radius-sm); }
+
+/* ---------------- card ---------------- */
+.aovivo-card {
+  display: flex; flex-direction: column; gap: 8px;
+  border: 1px solid var(--line); border-left: 3px solid var(--line-2); border-radius: var(--radius-sm);
+  background: var(--surface); padding: 10px 14px; cursor: pointer;
+  box-shadow: var(--shadow-1);
+  transition: border-color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out),
+              box-shadow var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+}
+.aovivo-card:hover { border-color: var(--line-2); background: var(--surface-2); box-shadow: var(--shadow-2); transform: translateX(1px); }
+.aovivo-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* Compra é a linha de receita, e receita neste painel é índigo (a mesma regra que rege
+   --dado-1 nos gráficos) — âmbar aqui faria toda venda parecer um alerta. */
+.aovivo-card--purchase { border-left-color: var(--accent); background: var(--accent-soft); }
+.aovivo-card--purchase:hover { background: var(--accent-soft); border-color: var(--accent-line); }
+
+.aovivo-entrando { animation: aovivoEntrarBaixo var(--dur-slow) var(--ease-out); }
+@keyframes aovivoEntrarBaixo {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.aovivo-card-topo { display: flex; align-items: center; gap: 10px; }
+.aovivo-card-nome { font-weight: 650; font-size: .94rem; color: var(--text); }
+.aovivo-card--purchase .aovivo-card-nome { color: var(--accent); }
+.aovivo-card-origem {
+  font-family: var(--font-mono); font-size: .68rem; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--muted); border: 1px solid var(--line-2); border-radius: 5px; padding: .05rem .4rem;
+  background: var(--surface-2);
+}
+.aovivo-card-hora {
+  margin-left: auto; font-family: var(--font-mono); font-size: .78rem; color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.aovivo-card-meio { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.aovivo-card-valor { font-family: var(--font-display); font-weight: 700; font-size: .96rem; color: var(--text); font-variant-numeric: tabular-nums; }
+.aovivo-card-valor--vazio { color: var(--muted-2); font-weight: 500; }
+
+/* ---------------- selos de identificador (fbc / fbp / gclid) ----------------
+   Três estados que precisam ser lidos de relance e sem depender de cor: presente,
+   ausente e desconhecido. O ícone (check / minus / help-circle) é o canal principal;
+   a cor só confirma. */
+.aovivo-card-selos { display: flex; gap: 6px; flex-wrap: wrap; }
+.aovivo-selo {
+  display: inline-flex; align-items: center; gap: .25rem;
+  font-family: var(--font-mono); font-size: .72rem; padding: .12rem .4rem; border-radius: 5px;
+  border: 1px solid var(--line-2); background: var(--surface-2); color: var(--muted);
+}
+.aovivo-selo svg { width: 12px; height: 12px; flex: none; }
+.aovivo-selo.is-on { color: var(--ok); border-color: var(--ok-line); background: var(--ok-soft); }
+.aovivo-selo.is-off { color: var(--muted-2); }
+.aovivo-selo.is-desconhecido { color: var(--muted-2); font-style: italic; }
+
+.aovivo-card-destinos { display: flex; gap: 8px; flex-wrap: wrap; }
+.aovivo-destino {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: .74rem; font-weight: 600; padding: .12rem .48rem; border-radius: var(--radius-sm);
+  border: 1px solid var(--line-2); background: var(--surface-2); color: var(--muted);
+}
+.aovivo-destino svg { width: 12px; height: 12px; flex: none; }
+.aovivo-destino--ok { color: var(--ok); border-color: var(--ok-line); background: var(--ok-soft); }
+.aovivo-destino--retry { color: var(--warning); border-color: var(--warning-line); background: var(--warning-soft); }
+.aovivo-destino--dead { color: var(--danger); border-color: var(--danger-line); background: var(--danger-soft); }
+.aovivo-destino--pending { color: var(--info); border-color: var(--info-line); background: var(--info-soft); }
+.aovivo-destino--skip, .aovivo-destino--vazio { color: var(--muted-2); }
+.aovivo-destino--mudou { animation: aovivoFlash .6s var(--ease-out); }
+@keyframes aovivoFlash {
+  0% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 32%, transparent); }
+  100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 0%, transparent); }
+}
+
+/* ---------------- painel lateral de detalhe ---------------- */
+.aovivo-detalhe {
+  border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface);
+  padding: 14px 16px; position: sticky; top: 12px;
+  max-height: calc(100vh - 300px); overflow-y: auto;
+  box-shadow: var(--shadow-1);
+  animation: aovivoEntrarLado var(--dur-base) var(--ease-out);
+}
+@keyframes aovivoEntrarLado { from { opacity: 0; transform: translateX(8px); } to { opacity: 1; transform: translateX(0); } }
+.aovivo-detalhe-topo { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.aovivo-detalhe-topo h4 { font-size: 1rem; color: var(--text); }
+.aovivo-detalhe-corpo h5 {
+  font-size: .72rem; font-weight: 600; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--muted-2); margin: 16px 0 8px;
+}
+.aovivo-detalhe-corpo h5:first-child { margin-top: 0; }
+
+.aovivo-detalhe-meta { display: grid; gap: 8px; margin: 0; }
+.aovivo-detalhe-meta > div { display: flex; justify-content: space-between; gap: 10px; border-bottom: 1px dashed var(--line); padding-bottom: 6px; }
+.aovivo-detalhe-meta dt { color: var(--muted); font-size: .82rem; }
+.aovivo-detalhe-meta dd { margin: 0; font-size: .86rem; color: var(--text); text-align: right; word-break: break-word; }
+
+.aovivo-detalhe-entregas { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: .86rem; }
+.aovivo-detalhe-entregas li {
+  border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 6px 10px;
+  background: var(--surface-2); color: var(--text);
+}
+/* Aviso honesto do modo polling: o payload não existe nessa fonte de dados. É nota de
+   rodapé, não erro — daí o tom de informação e não o de alerta. */
+.aovivo-detalhe-nota { font-size: .84rem; color: var(--muted); margin: 0; }
+
+@media (max-width: 900px) {
+  .aovivo-corpo:has(.aovivo-detalhe:not([hidden])) { grid-template-columns: 1fr; }
+  .aovivo-detalhe { position: static; max-height: none; }
+  .aovivo-topo { gap: 14px; }
+  .aovivo-indicador { margin-left: 0; }
+}

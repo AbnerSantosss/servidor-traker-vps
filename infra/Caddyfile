@@ -1,0 +1,130 @@
+# ===========================================================================
+# Servidor Traker — Caddy para HOMELAB ATRAS DE CLOUDFLARE TUNNEL
+#
+# Usado por docker-compose.yml. NAO substitui o infra/Caddyfile, que
+# continua sendo a configuracao para o deploy com IP publico (Oracle/VPS).
+#
+# DIFERENCAS EM RELACAO AO Caddyfile PADRAO — e o porque de cada uma:
+#
+#  1. auto_https off / site em :80 (HTTP puro)
+#     Quem termina o TLS e a Cloudflare, na borda dela. O cloudflared fala com
+#     este Caddy por HTTP dentro da rede docker. Tentar emitir certificado aqui
+#     nao so e inutil como FALHA: o desafio HTTP-01 da Let's Encrypt precisa da
+#     porta 80 alcancavel da internet, e atras de tunel nao ha porta aberta.
+#
+#  2. Sem on_demand_tls e sem o bloco coringa :443
+#     O modelo Stape (cliente aponta sgtm.dele.com.br para o nosso IP e o Caddy
+#     emite o certificado na hora) NAO funciona atras de tunel: nao existe IP
+#     para o cliente apontar, e a Cloudflare so emite certificado para hostname
+#     que esteja na conta dela. Servir dominio de terceiro exigiria Cloudflare
+#     for SaaS (Custom Hostnames), produto pago a parte.
+#     Consequencia: a aba "Dominios" do painel nao tem efeito neste deploy.
+#     O endpoint /api/caddy/ask continua existindo na API, apenas ninguem o chama.
+#
+#  3. X-Forwarded-For reescrito a partir de CF-Connecting-IP
+#     Ver o comentario extenso no snippet (proxy_para_api) abaixo. E o ajuste
+#     mais importante deste arquivo.
+# ===========================================================================
+{
+	# Nenhum certificado e emitido ou renovado por este Caddy.
+	auto_https off
+}
+
+# --------------------------- Trechos reutilizaveis -------------------------
+(seguranca) {
+	header {
+		# Sem HSTS aqui: quem responde ao navegador em HTTPS e a Cloudflare, e
+		# e la (SSL/TLS > Edge Certificates > Always Use HTTPS + HSTS) que a
+		# politica deve ser configurada. Emitir HSTS de dentro do tunel so
+		# duplicaria o header se a Cloudflare tambem estiver enviando o dela.
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	# ATENCAO: NAO configure CORS aqui. Quem sabe quais dominios de cliente estao
+	# autorizados e a aplicacao (a lista vive no banco). Um CORS fixo no proxy
+	# entraria em conflito com o header que o Express ja envia — e o navegador
+	# rejeita resposta com Access-Control-Allow-Origin duplicado.
+}
+
+(proxy_para_api) {
+	reverse_proxy api:3000 {
+		# ---- CRITICO PARA A QUALIDADE DE MATCH (EMQ) DA META ----
+		# src/ingest/normalize.js:19 le o PRIMEIRO item de X-Forwarded-For como
+		# client_ip_address. Atras da Cloudflare isso e inseguro por dois motivos:
+		#
+		#   a) A Cloudflare APENDA o IP do visitante ao X-Forwarded-For que
+		#      chegou. Se o proprio cliente mandar um XFF forjado, o primeiro
+		#      item da cadeia e o valor forjado, nao o IP real — e o IP e campo
+		#      de match da Meta.
+		#   b) Se o XFF vier ausente, o fallback (X-Real-IP / remote_host) seria
+		#      o IP do container do cloudflared. Ai TODOS os eventos passam a
+		#      compartilhar o mesmo IP e o EMQ despenca, sem erro nenhum no log.
+		#
+		# CF-Connecting-IP e o unico header que a Cloudflare SEMPRE sobrescreve,
+		# entao ele nao e forjavel. Reescrevemos a cadeia com ele.
+		#
+		# Note que isto e o OPOSTO do que se faz num deploy com IP publico: la,
+		# com IP publico direto, sobrescrever o XFF destruiria a cadeia legitima.
+		# A regra muda porque a topologia muda.
+		header_up X-Forwarded-For {http.request.header.CF-Connecting-IP}
+		header_up X-Real-IP {http.request.header.CF-Connecting-IP}
+
+		# ---- CRITICO: SEM ISTO NENHUMA TAG DISPARA ----
+		# src/ingest/scripts.js monta o endereco que fica embutido dentro das
+		# tags servidas em /s/, /t/, /g/ e /w/ assim:
+		#     const proto = req.headers['x-forwarded-proto'] || req.protocol || 'https'
+		#     return `${proto}://${req.get('host')}`
+		#
+		# Num deploy com IP publico o Caddy recebe HTTPS de verdade, entao o
+		# X-Forwarded-Proto que ele gera sai `https` e tudo funciona sozinho.
+		# AQUI ele recebe HTTP puro na porta 80 (o TLS terminou la na borda da
+		# Cloudflare), entao o valor que ele geraria por conta propria e `http`.
+		#
+		# O estrago: toda tag sairia com ENDPOINT = "http://host/e/slug". A pagina
+		# do cliente e HTTPS, o navegador classifica isso como mixed content e
+		# BLOQUEIA a requisicao. Nenhum evento chega, e nao aparece erro nenhum no
+		# log do servidor — do lado de ca a tag foi servida com sucesso.
+		#
+		# Fixamos em `https` porque e sempre verdade: quem fala com o visitante e
+		# a Cloudflare, e ela so atende em HTTPS. O trecho HTTP e apenas o pulo
+		# interno cloudflared -> caddy -> api, que o visitante nunca ve.
+		header_up X-Forwarded-Proto https
+
+		transport http {
+			dial_timeout 5s
+			response_header_timeout 30s
+		}
+
+		# ---- TEMPO REAL (SSE) DO PAINEL: GET /api/projects/:id/stream ----
+		# Sem isto o Caddy bufferiza a resposta antes de repassar, e os eventos
+		# do painel chegam em rajadas em vez de na hora.
+		flush_interval -1
+	}
+}
+
+(log_json) {
+	log {
+		output stdout
+		format json
+		level INFO
+	}
+}
+
+# ============================ SITE UNICO ===================================
+# Escuta HTTP na 80, dentro da rede docker. Nenhuma porta e publicada no host
+# (ver docker-compose.yml): o unico caminho de entrada e o cloudflared.
+#
+# Sem nome de host no endereco de proposito: o Caddy atende qualquer Host que o
+# tunel entregar. Quem decide o hostname valido e o painel da Cloudflare, na
+# configuracao de Public Hostname do tunel.
+:80 {
+	# Compressao: a Cloudflare ja comprime na borda, mas isto reduz o trafego
+	# dentro do tunel, que e o trecho mais lento do caminho.
+	encode zstd gzip
+
+	import seguranca
+	import log_json
+	import proxy_para_api
+}

@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TrackServer · Entrar</title>
+  <link rel="icon" type="image/svg+xml" href="/assets/marca.svg" />
+  <link rel="stylesheet" href="/app.css" />
+</head>
+<body class="auth-brand">
+  <main class="auth-shell">
+    <div class="auth-card">
+      <div class="auth-marca">
+        <img src="/assets/marca.svg" alt="" width="44" height="44" />
+        <span class="auth-marca-nome">Track<b>Server</b></span>
+      </div>
+
+      <h1 class="auth-title" id="authTitle">Entrar no <em>painel</em></h1>
+      <p class="auth-sub" id="authSub">Informe suas credenciais de administrador para continuar.</p>
+
+      <div class="auth-alert" id="authError" role="alert" aria-live="assertive" hidden></div>
+      <div class="auth-ok" id="authOk" role="status" aria-live="polite" hidden></div>
+
+      <form id="authForm" novalidate>
+        <div class="field">
+          <label for="email">E-mail</label>
+          <input type="email" id="email" name="email" autocomplete="username" placeholder="voce@empresa.com" required autofocus />
+        </div>
+
+        <div class="field" id="fieldName" hidden>
+          <label for="name">Nome</label>
+          <input type="text" id="name" name="name" autocomplete="name" placeholder="Seu nome" />
+        </div>
+
+        <div class="field" id="fieldPassword">
+          <label for="password">Senha</label>
+          <span class="pw-wrap">
+            <input type="password" id="password" name="password" autocomplete="current-password" required />
+            <button type="button" class="pw-toggle" id="pwToggle" aria-pressed="false" aria-controls="password">Mostrar</button>
+          </span>
+        </div>
+
+        <div class="field" id="fieldConfirm" hidden>
+          <label for="password2">Confirmar senha</label>
+          <p class="desc">Mínimo de 8 caracteres.</p>
+          <span class="pw-wrap">
+            <input type="password" id="password2" name="password2" autocomplete="new-password" />
+            <button type="button" class="pw-toggle" id="pwToggle2" aria-pressed="false" aria-controls="password2">Mostrar</button>
+          </span>
+        </div>
+
+        <label class="auth-remember" id="blocoRemember">
+          <input type="checkbox" id="remember" name="remember" />
+          <span>Manter conectado por 30 dias</span>
+        </label>
+
+        <button class="btn btn-primary btn-lg auth-submit" type="submit" id="btnSubmit">Entrar</button>
+      </form>
+
+      <p class="auth-links">
+        <button type="button" class="auth-link" id="linkEsqueci">Esqueci minha senha</button>
+        <button type="button" class="auth-link" id="linkVoltar" hidden>← Voltar ao login</button>
+      </p>
+
+      <p class="auth-foot" id="authFoot">sessão por cookie HttpOnly · rastreamento server-side</p>
+    </div>
+  </main>
+
+  <div id="toast"></div>
+
+  <script src="/login.js" defer></script>
+</body>
+</html>

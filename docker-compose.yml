@@ -1,0 +1,304 @@
+# ===========================================================================
+# Servidor Traker — stack de HOMELAB atras de CLOUDFLARE TUNNEL (via Portainer)
+#
+# Este repositorio existe SO para o deploy no homelab atras de Cloudflare Tunnel.
+# O monorepo de desenvolvimento (com o compose de IP publico, os repos de deploy
+# separados e o Caddyfile com Let's Encrypt) segue em outro lugar — ver README.md.
+#
+# ----------------------- COMO SUBIR NO PORTAINER ---------------------------
+#   1. Stacks > Add stack > Repository.
+#      Repository URL: o repositorio privado deste projeto (+ credencial Git).
+#      Compose path: docker-compose.yml
+#   2. Em "Environment variables", cadastre pelo menos:
+#      POSTGRES_PASSWORD, APP_SECRET, PUBLIC_HOST, ADMIN_EMAIL, ADMIN_PASSWORD,
+#      SMTP_USER, SMTP_PASS, SMTP_FROM e TUNNEL_TOKEN.
+#      (Todas as demais tem valor padrao — ver o bloco x-app-env abaixo.)
+#   3. Deploy the stack. O Portainer clona, substitui os ${VAR} e sobe.
+#   4. No painel da Cloudflare (Zero Trust > Networks > Tunnels), aponte o
+#      Public Hostname do tunel para o servico HTTP `caddy:80`.
+#   5. Nao ha passo de migracao nem de criacao de admin — ver nota "BOOT
+#      AUTOMATICO" logo abaixo.
+#
+#   Atualizar depois: Stacks > a stack > "Pull and redeploy" (marque
+#   "Re-pull image" para o cloudflared/postgres/caddy e rebuild para a api).
+#
+# ------------------------ TOPOLOGIA DE REDE --------------------------------
+#   Internet -> Cloudflare (borda, TLS) ~~tunel de saida~~> cloudflared
+#            -> caddy:80 -> api:3000 -> db:5432
+#
+#   NENHUMA PORTA E PUBLICADA NO HOST. Este e o ponto central do deploy de
+#   homelab: a maquina fica atras de CGNAT/roteador domestico, sem IP publico e
+#   sem port forwarding. Quem estabelece a conexao e o cloudflared, de dentro
+#   para fora; a Cloudflare devolve o trafego por esse mesmo tunel ja aberto.
+#   Como consequencia:
+#     - nao existe superficie de ataque exposta na rede local nem no roteador;
+#     - o TLS termina na borda da Cloudflare, entao o Caddy so fala HTTP na 80
+#       (ver infra/Caddyfile, que tem `auto_https off`);
+#     - publicar qualquer porta aqui seria um caminho paralelo ao tunel,
+#       contornando a autenticacao/WAF da Cloudflare. Nao faca isso.
+#
+# ------------------ POR QUE NAO EXISTE `env_file:` AQUI --------------------
+#   O deploy e feito pelo Portainer a partir de um repositorio Git. O `.env`
+#   real esta no .gitignore, entao ele NAO vem no clone — um `env_file: .env`
+#   simplesmente falharia (ou, pior, subiria com valores vazios).
+#   E as variaveis cadastradas na UI do Portainer nao sao "injetadas" nos
+#   containers: o Portainer as usa para a SUBSTITUICAO de ${VAR} no proprio
+#   compose, antes de entregar o arquivo ao Docker. Logo, a unica forma de a
+#   variavel chegar ao container e estar escrita em um bloco `environment:`
+#   explicito — e por isso que a lista abaixo e longa e literal.
+#
+# ------------------------- BOOT AUTOMATICO ---------------------------------
+#   NAO existe passo manual de migracao neste deploy. O src/server.js chama,
+#   nessa ordem, antes de abrir a porta:
+#       waitForDatabase()  -> espera o Postgres aceitar conexao
+#       runMigrations()    -> cria/atualiza o schema
+#       bootstrapAdmin()   -> cria o primeiro usuario a partir de
+#                             ADMIN_EMAIL/ADMIN_PASSWORD, se o banco estiver vazio
+#   Ou seja: os `docker compose run --rm api npm run migrate` e
+#   `npm run criar-usuario` do compose de producao NAO tem equivalente aqui —
+#   o que e essencial, porque o Portainer sobe a stack sem shell interativo.
+#   ADMIN_PASSWORD so tem efeito no primeiro boot (banco sem usuarios); trocar a
+#   variavel depois nao troca a senha, isso se faz pelo painel.
+# ===========================================================================
+
+# --------------------- Ambiente compartilhado api/worker -------------------
+# Ancora YAML: api e worker rodam o MESMO codigo e precisam do MESMO ambiente
+# (o worker le config de fila, credenciais cifradas e a mesma DATABASE_URL).
+# Manter uma copia unica evita a falha classica de alterar uma variavel em um
+# servico e esquecer do outro — que nao quebra o boot, so faz o worker se
+# comportar diferente da api, um bug caro de diagnosticar.
+x-app-env: &app_env
+  NODE_ENV: production
+  PORT: 3000
+
+  # DATABASE_URL e DERIVADA de POSTGRES_PASSWORD, e nao uma variavel propria.
+  # Motivo: elimina de vez a classe de erro "senha do banco e senha da URL
+  # divergentes" — no .env.example as duas sao campos separados e precisam ser
+  # mantidas iguais na mao; aqui existe uma fonte de verdade so.
+  #
+  # RESSALVA IMPORTANTE: isto so funciona porque a senha em uso e alfanumerica
+  # de 24 caracteres, portanto URL-safe. Se algum dia gerarem uma senha contendo
+  # `/`, `@`, `+` ou `:`, a URL quebra (o parser corta no caractere errado e a
+  # conexao falha, as vezes com mensagem enganosa). Nesse caso: ou aplique
+  # percent-encoding no valor, ou volte a expor DATABASE_URL como variavel
+  # separada da stack.
+  DATABASE_URL: postgres://traker:${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD nas variaveis da stack}@db:5432/traker
+
+  # Chave mestra que cifra as credenciais dos clientes em repouso e assina as
+  # sessoes do painel. Perde-la = recadastrar todos os access tokens.
+  APP_SECRET: ${APP_SECRET:?defina APP_SECRET nas variaveis da stack (gere com openssl rand -hex 32)}
+
+  # Hostname publico configurado no Public Hostname do tunel na Cloudflare.
+  # Usado para montar os snippets e as URLs mostradas no painel.
+  PUBLIC_HOST: ${PUBLIC_HOST:?defina PUBLIC_HOST nas variaveis da stack (ex. traker.seudominio.com.br)}
+  PUBLIC_SCHEME: ${PUBLIC_SCHEME:-https}
+
+  # Obrigatoriamente true: ha dois saltos de proxy na frente (Cloudflare e
+  # Caddy). Sem isso o Express usa o IP do container do caddy como IP do
+  # visitante e o client_ip_address enviado a Meta fica errado para TODOS os
+  # eventos — derrubando o EMQ sem gerar erro nenhum no log.
+  TRUST_PROXY: "true"
+
+  META_API_VERSION: ${META_API_VERSION:-v21.0}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+
+  # --- Fila de envio (worker) ---
+  WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-5}
+  WORKER_POLL_MS: ${WORKER_POLL_MS:-1000}
+  MAX_ATTEMPTS: ${MAX_ATTEMPTS:-6}
+  RETENTION_DAYS: ${RETENTION_DAYS:-90}
+
+  # --- Sessao e cookies de primeira parte ---
+  SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-12}
+  COOKIE_MAX_AGE_DAYS: ${COOKIE_MAX_AGE_DAYS:-90}
+  SET_FIRST_PARTY_COOKIES: ${SET_FIRST_PARTY_COOKIES:-true}
+
+  # --- Admin inicial (usado uma unica vez, no primeiro boot) ---
+  ADMIN_EMAIL: ${ADMIN_EMAIL:?defina ADMIN_EMAIL nas variaveis da stack (e-mail do primeiro administrador)}
+  ADMIN_PASSWORD: ${ADMIN_PASSWORD:?defina ADMIN_PASSWORD nas variaveis da stack (senha do primeiro administrador)}
+
+  # --- SMTP (convites e reset de senha do painel) ---
+  SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+  SMTP_PORT: ${SMTP_PORT:-465}
+  SMTP_USER: ${SMTP_USER:?defina SMTP_USER nas variaveis da stack (usuario do servidor SMTP)}
+  SMTP_PASS: ${SMTP_PASS:?defina SMTP_PASS nas variaveis da stack (senha de app do SMTP, nao a senha da conta)}
+  SMTP_FROM: ${SMTP_FROM:?defina SMTP_FROM nas variaveis da stack (remetente dos e-mails, ex. Traker no-reply@seudominio.com.br)}
+  CONVITE_TTL_HORAS: ${CONVITE_TTL_HORAS:-72}
+  RESET_TTL_HORAS: ${RESET_TTL_HORAS:-2}
+
+  # --- Ajustes finos que o .env.producao nao lista, mas que precisam existir AQUI
+  # Uma variavel so chega ao container se estiver escrita neste bloco. Sem estas
+  # quatro linhas, cadastra-las no Portainer nao teria efeito nenhum: a stack
+  # subiria "verde" usando o default do src/config/env.js e a divergencia so
+  # apareceria no comportamento, nunca em um erro. Todas mantem o mesmo default
+  # do codigo, entao deixa-las em branco no Portainer nao muda nada.
+
+  # Chave ANTERIOR, usada so para DECIFRAR durante uma rotacao de APP_SECRET
+  # (src/config/crypto.js:20-21). Vazia no dia a dia. Sem esta linha, rotacionar
+  # a chave exigiria editar o compose e refazer o deploy no meio da operacao —
+  # exatamente a hora errada para estar mexendo no arquivo.
+  APP_SECRET_PREVIOUS: ${APP_SECRET_PREVIOUS:-}
+
+  # true = evento sem consent_state conta como negado (postura conservadora,
+  # recomendada quando o site do cliente ja tem CMP). Default false.
+  STRICT_CONSENT: ${STRICT_CONSENT:-false}
+
+  # DDI acrescentado a telefone nacional sem codigo de pais, antes do hash
+  # (src/config/crypto.js:132-134). 55 = Brasil; vazio desliga, para operacao fora.
+  DEFAULT_COUNTRY_CODE: ${DEFAULT_COUNTRY_CODE:-55}
+
+  # Origens onde o PAINEL e servido quando ele roda separado da api. Neste deploy
+  # o painel e servido pela propria api, no mesmo host: o valor correto e VAZIO.
+  # Preencher sem necessidade liga a checagem de origem em src/admin/seguranca.js
+  # (linhas 35, 62-67 e 87, que tambem monta a CSP) e passa a exigir origem
+  # declarada — o efeito e o login quebrar sem mensagem util.
+  PANEL_ORIGINS: ${PANEL_ORIGINS:-}
+
+services:
+  # ------------------------------- Banco ----------------------------------
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: traker
+      POSTGRES_DB: traker
+      # A senha vem das variaveis da stack no Portainer — nunca literal aqui,
+      # porque este arquivo e versionado.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD nas variaveis da stack}
+      # Sem isso o Postgres 16 aceitaria conexoes locais sem senha (trust).
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --auth-local=scram-sha-256"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # NENHUMA porta publicada. No homelab isso importa ate mais do que na
+    # nuvem: a rede local costuma ser tratada como confiavel, e um Postgres
+    # visivel em 192.168.x.x fica ao alcance de qualquer dispositivo da casa.
+    # Para depurar com um cliente SQL, use `docker exec -it <container> psql`
+    # ou o console do proprio Portainer, em vez de abrir a porta.
+    healthcheck:
+      # pg_isready confirma que o Postgres esta aceitando conexoes, nao apenas
+      # que o processo subiu. E disso que o `condition: service_healthy` da api
+      # depende para nao tentar migrar contra um banco ainda inicializando.
+      test: ["CMD-SHELL", "pg_isready -U traker -d traker"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - interna
+
+  # ------------------------- API / painel admin ---------------------------
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # Nome fixo da imagem para o worker reaproveitar o mesmo build em vez de
+    # compilar duas vezes.
+    image: servidor-traker:latest
+    restart: unless-stopped
+    # init: true coloca um PID 1 de verdade no container. Como o CMD e
+    # `npm start`, o node roda como filho do npm; sem o init, processos zumbis
+    # se acumulam e o SIGTERM do `docker compose down` pode nao chegar ao node.
+    init: true
+    environment:
+      <<: *app_env
+    depends_on:
+      db:
+        condition: service_healthy
+    # SEM `ports`: quem recebe o trafego e o caddy, e quem traz o trafego de
+    # fora e o cloudflared. Publicar a 3000 no host criaria um caminho HTTP
+    # direto na rede local, sem passar pela Cloudflare.
+    expose:
+      - "3000"
+    networks:
+      - interna
+
+  # --------------------- Worker de envio (fila no Postgres) ---------------
+  worker:
+    # Mesma imagem da api — sem build proprio, so muda o comando.
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: servidor-traker:latest
+    command: npm run worker
+    restart: unless-stopped
+    init: true
+    environment:
+      <<: *app_env
+    depends_on:
+      db:
+        condition: service_healthy
+    # O worker nao serve HTTP, entao o HEALTHCHECK da imagem (que bate em /health)
+    # nunca passaria e o container ficaria eternamente "unhealthy" — mascarando uma
+    # falha real quando ela acontecesse. Checamos a presenca do processo.
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'node src/worker.js' > /dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      - interna
+
+  # --------------------------- Proxy reverso (HTTP) -----------------------
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    volumes:
+      # Caddyfile ESPECIFICO deste deploy: auto_https off, site literal `:80` e
+      # reescrita de X-Forwarded-For a partir de CF-Connecting-IP. Montar o
+      # infra/Caddyfile padrao aqui faria o Caddy tentar emitir certificado
+      # Let's Encrypt, o que falha atras do tunel (o desafio HTTP-01 exige a
+      # porta 80 alcancavel da internet).
+      - ./infra/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Mesmo sem emitir certificado, o Caddy escreve estado nesses caminhos.
+      # Mante-los em volumes nomeados evita reescrita a cada recreate e mantem
+      # o arquivo compativel com o compose de producao.
+      - caddy_data:/data
+      - caddy_config:/config
+    # SEM bloco `environment:`: o Caddyfile nao usa nenhuma variavel —
+    # o site e o literal `:80` e o hostname publico e decidido no painel da
+    # Cloudflare. PUBLIC_HOST/CADDY_SITE, que existem no compose de producao,
+    # nao teriam efeito nenhum aqui, e o proxy nao tem por que enxergar
+    # variavel de aplicacao.
+    #
+    # SEM `ports:`: o Caddy so precisa ser alcancavel pelo cloudflared, que esta
+    # na mesma rede docker. Publicar 80/443 no host reabriria a porta que o
+    # tunel existe justamente para nao precisar.
+    expose:
+      - "80"
+    depends_on:
+      - api
+    networks:
+      - interna
+
+  # ------------------- Tunel de entrada (Cloudflare Tunnel) ---------------
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    # --no-autoupdate: a atualizacao automatica reinicia o binario por conta
+    # propria dentro do container, o que confunde o supervisor do Docker (o
+    # container pode ficar "up" com o tunel derrubado). Atualizar aqui e trocar
+    # a imagem via "Re-pull and redeploy" no Portainer.
+    command: tunnel --no-autoupdate run
+    environment:
+      # Token do tunel gerado no Zero Trust > Networks > Tunnels. Ele carrega as
+      # credenciais do tunel inteiro — trate como segredo, so nas variaveis da
+      # stack, nunca no repositorio.
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?defina TUNNEL_TOKEN nas variaveis da stack (token do tunel no painel Zero Trust da Cloudflare)}
+    depends_on:
+      - caddy
+    # Sem `ports`: o cloudflared abre uma conexao de SAIDA para a borda da
+    # Cloudflare (443/UDP QUIC, com fallback HTTP/2). Nao ha nada escutando de
+    # fora, e por isso nenhuma regra de firewall ou port forwarding e
+    # necessaria no roteador.
+    networks:
+      - interna
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
+
+networks:
+  interna:
+    driver: bridge

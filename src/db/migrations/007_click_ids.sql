@@ -1,0 +1,21 @@
+-- 007_click_ids — camada aberta de identificadores de clique (F9/E9: instalação sem
+-- GTM e parâmetros extras).
+--
+-- Por que UMA coluna JSONB e não uma coluna por plataforma:
+--   A lista de redes de anúncio que inventam seu próprio "clickid de URL" cresce mais
+--   rápido que qualquer ciclo de migração (hoje é msclkid/twclid/li_fat_id/epik/...;
+--   ano que vem vai ter outra dúzia). Uma coluna por plataforma significaria uma
+--   migração nova a cada rede — o problema que este design existe para evitar.
+--
+-- Por que uma coluna PRÓPRIA (`click_ids`) e não reaproveitar `params`:
+--   Os identificadores EXPLÍCITOS novos (msclkid, twclid, li_fat_id, epik, sccid,
+--   _scid, rdt_cid, irclickid, obclid, kwai_click_id) já entraram na lista fechada
+--   MARKETING_KEYS de src/db/repos/identities.js e são persistidos na coluna `params`
+--   já existente — não precisam de coluna nova, `params` já é JSONB e o schema não
+--   precisa saber os nomes, só o código. Mas a CAMADA ABERTA (click_ids) é outra coisa:
+--   guarda qualquer chave que o servidor não conhece, vinda de query string por
+--   allowlist de FORMATO (não de conteúdo — ver sanitizeClickIds). Misturar isso com
+--   `params` apagaria a distinção entre "identificador que sabemos o que é e mapeamos
+--   nos destinos" e "veio de uma query string desconhecida, só serve para o postback".
+--   Colunas separadas deixam essa fronteira explícita no próprio schema.
+ALTER TABLE identities ADD COLUMN IF NOT EXISTS click_ids JSONB NOT NULL DEFAULT '{}'::jsonb;

@@ -1,0 +1,265 @@
+/* Estilos das abas Instalação e Domínios (F7/F9).
+   Reaproveita os tokens de public/app.css (:root) — nada é redefinido aqui, só
+   componentes novos: stepper, escolha de método, listas de identificadores, cartões de
+   motivo e tutorial numerado de domínio, linha do tempo de status, tema de sintaxe dos
+   blocos de código.
+
+   F-V4: saíram os aliases da paleta antiga (--brand-gold, --ink-2, --teal) e os alfas
+   cravados do dourado que eles acompanhavam. A regra que ficou: ação e seleção em --accent, marca
+   (o gradiente ciano→violeta) só na barra de progresso do stepper — que é o único lugar
+   desta tela em que a identidade tem papel, porque ela mede o caminho inteiro. */
+
+/* ═══════════ divulgação (<details> genérico, usado nas duas abas) ═══════════ */
+.divulgacao { margin-top: 14px; }
+.divulgacao > summary {
+  cursor: pointer; list-style: none; font-size: .88rem; color: var(--muted);
+  display: flex; align-items: center; gap: 6px;
+  transition: color var(--dur-fast) var(--ease-out);
+}
+.divulgacao > summary::-webkit-details-marker { display: none; }
+.divulgacao > summary::before { content: '\25B8'; color: var(--muted-2); transition: transform var(--dur-fast) var(--ease-out); display: inline-block; }
+.divulgacao[open] > summary::before { transform: rotate(90deg); }
+.divulgacao > summary:hover { color: var(--accent); }
+.divulgacao > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+
+/* ═══════════ Instalação — cabeçalho pedagógico curto ═══════════ */
+.inst-cabecalho {
+  border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--surface); padding: 16px 20px; margin-bottom: 18px;
+}
+.inst-resumo { margin: 0; font-size: .96rem; color: var(--text); line-height: 1.55; }
+.inst-resumo code { color: var(--accent); font-size: .92em; }
+.inst-resumo b { color: var(--text); }
+.inst-desenho { margin-top: 10px; }
+.inst-desenho .origem-lanes { margin-top: 14px; }
+.inst-status-destinos { margin-bottom: 22px; }
+
+/* ═══════════ Instalação — checklist de credenciais dos destinos ═══════════
+   Estava montado com `style=` no JS, cor cravada por linha. Aqui vira classe: três
+   estados (conferido, pendente, opcional não preenchido), cada um com ícone próprio,
+   porque uma lista em que só a cor muda é ilegível para quem não separa verde de âmbar. */
+.inst-chk-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 0; font-size: .9rem; color: var(--text);
+}
+.inst-chk-row svg { flex: none; width: 16px; height: 16px; }
+.inst-chk-row b { font-weight: 600; }
+.inst-chk-detalhe { color: var(--muted); }
+.inst-chk-ok svg { color: var(--ok); }
+.inst-chk-pendente svg { color: var(--warning); }
+.inst-chk-pendente > span { color: var(--warning); }
+.inst-chk-pulado { color: var(--muted); }
+.inst-chk-pulado svg { color: var(--muted-2); }
+
+/* Callout de alerta com ícone alinhado ao topo do texto (o `.callout` global é só a
+   caixa; o ícone é desta tela). */
+.inst-chk-alerta { display: flex; align-items: flex-start; gap: 8px; margin-top: 12px; }
+.inst-chk-alerta svg { flex: none; width: 16px; height: 16px; margin-top: 2px; color: var(--warning); }
+
+/* ═══════════ Stepper ═══════════ */
+.stepper { display: flex; flex-direction: column; gap: 10px; }
+
+.stepper-progresso { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+.stepper-barra {
+  flex: 1; height: 6px; border-radius: 4px; background: var(--surface-3);
+  overflow: hidden; min-width: 120px;
+}
+/* A barra mede o caminho da instalação — é informação, e informação se pinta com a
+   cor de ação, não com o gradiente da marca. (Era o último uso do degradê ciano→violeta
+   no painel; `--brand-grad` hoje aponta para o próprio acento, e este `var(--accent)`
+   deixa a intenção explícita para quem ler a regra.) */
+.stepper-barra-fill {
+  height: 100%; width: 0%; border-radius: 4px;
+  background: var(--accent);
+  transition: width var(--dur-slow) var(--ease-out);
+}
+.stepper-progresso-label {
+  font-family: var(--font-body); font-size: .78rem; color: var(--muted);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+
+.step {
+  border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--surface); overflow: hidden;
+  box-shadow: var(--shadow-1);
+  transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+}
+.step.is-aberto { border-color: var(--line-2); box-shadow: var(--shadow-2); }
+
+.step-head {
+  width: 100%; display: flex; align-items: center; gap: 12px;
+  padding: 16px 18px; background: none; border: none; cursor: pointer;
+  font-family: var(--font-body); text-align: left; color: var(--text);
+  transition: background var(--dur-fast) var(--ease-out);
+}
+.step-head:hover { background: var(--surface-2); }
+.step-head:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+.step-status { display: flex; flex: none; color: var(--muted-2); }
+.step-status.is-ok { color: var(--ok); }
+.step-status.is-atual { color: var(--accent); }
+.step-status.is-pendente { color: var(--muted-2); }
+
+.step-titulo { flex: 1; font-family: var(--font-display); font-size: 1.02rem; font-weight: 600; }
+
+.step-chevron { flex: none; color: var(--muted-2); transition: transform var(--dur-fast) var(--ease-out); }
+.step[aria-expanded="true"] .step-chevron,
+.step.is-aberto .step-chevron { transform: rotate(180deg); }
+
+.step-body { padding: 0 18px 20px; border-top: 1px solid var(--line); padding-top: 18px; }
+
+.step-vazio {
+  border: 1px dashed var(--line-2); border-radius: var(--radius-sm);
+  padding: 18px; text-align: center; color: var(--muted); font-size: .9rem; margin: 0;
+}
+
+/* ═══════════ Passo 1 — escolha de método ═══════════ */
+.metodo-escolha {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px;
+}
+.metodo-opcao {
+  display: block; border: 1px solid var(--line-2); border-radius: var(--radius-sm);
+  padding: 14px 16px; background: var(--surface-2); cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out);
+}
+.metodo-opcao:hover { border-color: var(--accent-line); background: var(--surface-3); }
+.metodo-opcao input[type="radio"] { position: absolute; opacity: 0; width: 0; height: 0; }
+.metodo-opcao:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+.metodo-opcao:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.metodo-opcao-corpo { display: flex; flex-direction: column; gap: 6px; }
+.metodo-opcao-titulo {
+  display: flex; align-items: center; gap: 8px;
+  font-family: var(--font-display); font-size: .96rem; font-weight: 600; color: var(--text);
+}
+.metodo-opcao-titulo i, .metodo-opcao-titulo svg { color: var(--accent); flex: none; }
+.metodo-opcao-desc { font-size: .84rem; color: var(--muted); line-height: 1.5; }
+.metodo-opcao-desc code { color: var(--accent); }
+
+/* ═══════════ Passo 2 — trilha "código próprio": lista de identificadores ═══════════ */
+.ids-auto { display: flex; flex-wrap: wrap; gap: 6px; }
+.id-badge {
+  font-family: var(--font-mono); font-size: .74rem; color: var(--muted);
+  border: 1px solid var(--line-2); background: var(--surface-2);
+  border-radius: 5px; padding: .18rem .5rem;
+}
+.id-badge-mais { color: var(--muted-2); border-style: dashed; background: none; }
+
+/* ═══════════ Blocos de código — tema claro de sintaxe ═══════════
+   O `.codebox` global já é papel claro (--surface-2 + --text); o que faltava era o
+   destaque. Ele é feito no cliente (instalacao.js), sem biblioteca nova e sem build:
+   cinco papéis, todos medidos contra --surface-2, que é a superfície mais escura em que
+   podem cair. Nenhum tom pastel — em fundo claro, cor clara some. */
+.codebox .cb-str { color: var(--ok); }          /* 4.6:1 sobre --surface-2 */
+.codebox .cb-com { color: var(--muted); font-style: italic; }
+.codebox .cb-key { color: var(--accent); font-weight: 600; }
+.codebox .cb-num { color: var(--info); }
+.codebox .cb-tag { color: var(--info); }
+/* A URL do projeto é o dado que o operador vai conferir caractere a caractere: ela não
+   pode ser a parte mais apagada do bloco. */
+.codebox .cb-url { color: var(--accent); }
+
+/* ═══════════ Passo 4 — verificação ═══════════ */
+.inst-verif { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.inst-verif-row {
+  display: flex; align-items: flex-start; gap: 10px;
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  padding: 10px 14px; background: var(--surface-2);
+}
+.inst-verif-row i, .inst-verif-row svg { flex: none; margin-top: 2px; color: var(--muted-2); }
+/* A linha conferida ganha fundo e borda próprios, não só um ícone verde: é o que
+   permite varrer a lista de relance e ver o que ainda falta. */
+.inst-verif-row.is-ok { border-color: var(--ok-line); background: var(--ok-soft); }
+.inst-verif-row.is-ok i, .inst-verif-row.is-ok svg { color: var(--ok); }
+.inst-verif-row div { display: flex; flex-direction: column; gap: 2px; }
+.inst-verif-row b { font-size: .9rem; color: var(--text); }
+.inst-verif-row span { font-size: .82rem; color: var(--muted); }
+
+/* ═══════════ Domínios — "por que isso existe" ═══════════ */
+.dom-porque { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.dom-motivo {
+  border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--surface); padding: 16px 18px;
+}
+.dom-motivo-icone {
+  width: 34px; height: 34px; border-radius: 8px; display: flex; align-items: center; justify-content: center;
+  background: var(--accent-soft); color: var(--accent); margin-bottom: 10px;
+}
+.dom-motivo h4 { margin: 0 0 6px; font-family: var(--font-display); font-size: .96rem; color: var(--text); }
+.dom-motivo p { margin: 0; font-size: .85rem; color: var(--muted); line-height: 1.5; }
+
+/* ═══════════ Domínios — tutorial numerado ═══════════ */
+.dom-tutorial { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
+.dom-tutorial-passo { display: flex; gap: 16px; }
+.dom-tutorial-n {
+  flex: none; width: 30px; height: 30px; border-radius: 50%;
+  border: 1px solid var(--accent-line); background: var(--accent-soft); color: var(--accent);
+  font-family: var(--font-body); font-weight: 700; font-size: .92rem;
+  font-variant-numeric: tabular-nums;
+  display: flex; align-items: center; justify-content: center;
+}
+.dom-tutorial-corpo {
+  flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--surface); padding: 18px 20px;
+}
+.dom-tutorial-corpo h4 { margin: 0 0 6px; font-family: var(--font-display); font-size: 1rem; color: var(--text); }
+.dom-tutorial-corpo form { max-width: none; margin-top: 12px; }
+
+.dom-hostname-linha { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.dom-hostname-linha input { flex: 1; min-width: 200px; }
+.dom-hostname-linha .btn code { color: inherit; font-size: .85em; }
+
+.dom-guias { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
+.dom-guia {
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  background: var(--surface-2); padding: 4px 12px; margin-top: 0;
+}
+.dom-guia > summary { padding: 8px 0; }
+
+/* ═══════════ Domínios — estado atual e linha do tempo ═══════════ */
+/* O badge responde "e agora?" numa palavra; a linha do tempo mostra onde nessa palavra
+   o domínio parou. Os dois juntos substituem o rótulo seco ("verified") que a tela
+   tinha antes e que não dizia se faltava o certificado ou se já estava tudo pronto. */
+.dom-timeline-wrap { margin-top: 10px; }
+.dom-timeline {
+  list-style: none; margin: 0; padding: 0; display: flex; align-items: center;
+  flex-wrap: wrap; gap: 0;
+}
+.dom-timeline-item {
+  display: flex; align-items: center; gap: 6px; font-size: .78rem; color: var(--muted-2);
+  padding: 4px 0;
+}
+.dom-timeline-item:not(:first-child)::before {
+  content: ''; display: inline-block; width: 22px; height: 1px; background: var(--line-2); margin-right: 10px;
+}
+.dom-timeline-item i, .dom-timeline-item svg { flex: none; width: 14px; height: 14px; }
+.dom-timeline-item.is-feito { color: var(--ok); }
+.dom-timeline-item.is-feito:not(:first-child)::before { background: var(--ok); }
+.dom-timeline-item.is-atual { color: var(--accent); font-weight: 600; }
+.dom-timeline-item.is-erro { color: var(--danger); font-weight: 600; }
+
+/* Trecho de erro dentro do resultado da verificação de DNS — a cor mora aqui em vez de
+   num `style=` inline espalhado pelo JS. */
+.dom-verify-erro { color: var(--danger); }
+.dom-verify-veredito { display: inline-flex; align-items: center; gap: .35rem; }
+.dom-verify-veredito.is-ok { color: var(--ok); }
+.dom-verify-veredito.is-warn { color: var(--warning); }
+.dom-verify-veredito svg { width: 14px; height: 14px; flex: none; }
+
+.dom-error { margin-top: 8px; }
+
+/* ═══════════ Responsivo — o pedido explícito foi "caber na tela" ═══════════ */
+@media (max-width: 1024px) {
+  .dom-porque { grid-template-columns: 1fr; }
+}
+@media (max-width: 900px) {
+  .metodo-escolha { grid-template-columns: 1fr; }
+  .stepper-progresso { flex-wrap: wrap; }
+}
+@media (max-width: 700px) {
+  .dom-tutorial-passo { flex-direction: column; gap: 8px; }
+  .dom-tutorial-n { width: 26px; height: 26px; font-size: .84rem; }
+  .step-head { padding: 13px 14px; gap: 9px; }
+  .step-titulo { font-size: .92rem; }
+  .step-body { padding: 0 14px 16px; padding-top: 14px; }
+  .dom-timeline-item:not(:first-child)::before { width: 12px; margin-right: 6px; }
+}

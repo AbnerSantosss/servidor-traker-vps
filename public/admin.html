@@ -1,0 +1,1271 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TrackServer · Painel</title>
+  <link rel="icon" type="image/svg+xml" href="/assets/marca.svg" />
+  <!-- Sem `defer`, e de propósito: aplica o tema salvo antes de o CSS ser
+       avaliado, senão quem escolheu o claro vê a tela escura piscar. A solução
+       usual (script inline) esbarra na CSP `script-src 'self'`. -->
+  <script src="/admin/tema.js"></script>
+  <link rel="stylesheet" href="/app.css" />
+  <!-- Folhas de estilo por assunto. O app.css continua sendo a base (tokens, layout,
+       componentes compartilhados); telas grandes construídas depois ganham arquivo próprio
+       para não transformar um único CSS de milhares de linhas no gargalo de toda
+       alteração. Todas são servidas do próprio domínio — a CSP não permite outra coisa. -->
+  <link rel="stylesheet" href="/estilos/webhook-studio.css" />
+  <link rel="stylesheet" href="/estilos/tempo-real.css" />
+  <link rel="stylesheet" href="/estilos/configuracoes.css" />
+  <link rel="stylesheet" href="/estilos/instalacao.css" />
+  <link rel="stylesheet" href="/estilos/dashboard.css" />
+  <link rel="stylesheet" href="/estilos/marca.css" />
+</head>
+<body class="admin-body">
+  <header class="admin-header">
+    <!-- O símbolo vem do chip (assets/marca.svg). O quadrado escuro em volta do
+         gradiente existe para o tema CLARO, onde o neon sozinho perderia
+         contraste; no tema escuro ele apenas se funde à barra. -->
+    <div class="brand">
+      <img src="/assets/marca.svg" alt="" width="26" height="26" />
+      TrackServer <small>painel</small>
+    </div>
+    <div class="admin-user">
+      <span class="admin-user-email" id="userEmail"></span>
+      <span class="admin-user-role" id="userRole" hidden></span>
+      <a class="btn btn-ghost" href="/">← Landing</a>
+      <button class="btn btn-ghost btn-tema" type="button" id="btnTema"
+              aria-label="Alternar entre tema escuro e claro" title="Alternar tema">
+        <i data-lucide="moon" aria-hidden="true"></i>
+      </button>
+      <button class="btn btn-ghost" type="button" id="btnLogout">Sair</button>
+    </div>
+  </header>
+
+  <div class="admin-shell">
+    <aside class="sidebar">
+      <h2>Projetos</h2>
+      <ul class="project-list" id="projectList"><li class="empty">Carregando…</li></ul>
+      <button class="btn btn-primary btn-novo-projeto" id="btnNewProject">+ Novo projeto</button>
+
+      <!-- Rodapé da sidebar: identidade de quem está logado e a porta de entrada das
+           Configurações. Fica no canto inferior de propósito — é o lugar onde as pessoas
+           já procuram conta e preferências em toda ferramenta que usam. Preenchido por
+           admin/configuracoes.js. -->
+      <div class="sidebar-rodape" id="rodapeUsuario"></div>
+    </aside>
+
+    <main class="content" id="content">
+      <div class="empty" id="placeholder">
+        <p>Selecione um projeto à esquerda ou crie um novo para começar.</p>
+      </div>
+
+      <!-- Configurações é uma VIEW, não uma aba de projeto: perfil, usuários e
+           notificações não pertencem a um projeto específico. Por isso ela substitui a
+           visão de projeto em vez de virar mais uma aba. Preenchida por
+           admin/configuracoes.js. -->
+      <div id="viewConfiguracoes" hidden></div>
+
+      <div id="projectView" hidden>
+        <!-- Casca do cabeçalho do projeto. O slot da marca da empresa (.projeto-logo
+             com fallback .projeto-iniciais) entra aqui na F-V5, ao lado do título —
+             o CSS dos dois já existe em app.css, com o mesmo quadrado de 34px, para
+             que ligar o dado real não mova nada de lugar. -->
+        <div class="pv-head">
+          <div class="pv-head-txt">
+            <h2 id="pvTitle"></h2>
+            <p class="pvsub" id="pvSubtitle"></p>
+          </div>
+        </div>
+
+        <div class="tabs" id="tabs">
+          <button class="tab active" data-tab="dashboard">Dashboard</button>
+          <button class="tab" data-tab="aovivo">Ao vivo</button>
+          <button class="tab" data-tab="setup">Instalação</button>
+          <button class="tab" data-tab="testar">Testar</button>
+          <button class="tab" data-tab="dominios">Domínios</button>
+          <button class="tab" data-tab="meta">Meta</button>
+          <button class="tab" data-tab="google">Google</button>
+          <button class="tab" data-tab="postback">Postback</button>
+          <button class="tab" data-tab="logs">Logs</button>
+          <button class="tab" data-tab="usuarios" id="tabUsuarios" hidden>Usuários</button>
+        </div>
+
+        <!-- ═══════════════ ABA DASHBOARD ═══════════════ -->
+        <section class="tab-panel active" data-panel="dashboard">
+          <!-- FILTER BAR -->
+          <div class="dash-filters">
+            <div class="filter-group">
+              <label>Período</label>
+              <select id="filterPeriod">
+                <option value="7d">Últimos 7 dias</option>
+                <option value="14d">Últimos 14 dias</option>
+                <option value="30d" selected>Últimos 30 dias</option>
+                <option value="90d">Últimos 90 dias</option>
+                <option value="all">Todo o período</option>
+              </select>
+            </div>
+            <div class="filter-group">
+              <label>UTM Source</label>
+              <select id="filterUtmSource"><option value="">Todas</option></select>
+            </div>
+            <div class="filter-group">
+              <label>Evento</label>
+              <select id="filterEventName">
+                <option value="">Todos</option>
+                <option value="page_view">page_view</option>
+                <option value="sign_up">sign_up</option>
+                <option value="begin_checkout">begin_checkout</option>
+                <option value="abandoned_checkout">abandoned_checkout</option>
+                <option value="purchase">purchase</option>
+              </select>
+            </div>
+            <button class="btn btn-primary" id="btnApplyFilters">Filtrar</button>
+          </div>
+
+          <!-- ESTADO VAZIO: projeto sem nenhum evento no período consultado -->
+          <div class="dash-vazio" id="dashVazio" hidden>
+            <p><b>Nenhum evento encontrado.</b> Sem dado não há métrica para calcular nem gráfico para desenhar.</p>
+            <p>Publique a captura na aba Instalação e envie o primeiro evento pelo console de testes — ou amplie o período no filtro acima, se o projeto já tiver histórico.</p>
+            <button class="btn btn-primary" type="button" id="btnDashIrInstalacao">Ir para Instalação</button>
+          </div>
+
+          <div id="dashConteudo">
+            <!-- FAIXA 1 · KPIs -->
+            <div class="kpi-grid" id="kpiGrid"><div class="dash-empty">Carregando métricas...</div></div>
+
+            <!-- FAIXA 2 · SÉRIE TEMPORAL -->
+            <div class="chart-card chart-card--full" id="cardSerie">
+              <div class="chart-card-h">
+                <h4>Eventos por dia <button type="button" class="ajuda" data-ajuda="dash-serie-temporal"></button></h4>
+              </div>
+              <div class="chart-body">
+                <div class="grafico" id="graficoSerie" hidden></div>
+                <div class="dash-fallback" id="fallbackSerie"></div>
+              </div>
+            </div>
+
+            <!-- FAIXA 3 · ATRIBUIÇÃO -->
+            <div class="chart-row">
+              <div class="chart-card" id="cardUtm">
+                <div class="chart-card-h">
+                  <h4>Receita por UTM <button type="button" class="ajuda" data-ajuda="dash-receita-utm"></button></h4>
+                  <button class="btn btn-ghost" type="button" id="btnUtmVoltar" hidden>← Voltar para origens</button>
+                </div>
+                <div class="chart-body">
+                  <div class="grafico" id="graficoUtm" hidden></div>
+                  <div class="dash-fallback" id="fallbackUtm"></div>
+                </div>
+              </div>
+
+              <div class="chart-card" id="cardQualidade">
+                <div class="chart-card-h">
+                  <h4>Qualidade de atribuição <button type="button" class="ajuda" data-ajuda="dash-qualidade-atribuicao"></button></h4>
+                </div>
+                <div class="chart-body">
+                  <div class="grafico" id="graficoQualidade" hidden></div>
+                  <div class="dash-fallback" id="fallbackQualidade"></div>
+                </div>
+
+                <!-- QUALIDADE DE CORRESPONDÊNCIA (EMQ) — migrado da faixa solta que existia no topo desta aba -->
+                <div class="emq-card emq-card--embutido">
+                  <div class="emq-head">
+                    <h4>Qualidade de correspondência (EMQ) <button type="button" class="ajuda" data-ajuda="emq"></button></h4>
+                    <span class="emq-meta" id="emqMeta"></span>
+                  </div>
+                  <div class="emq-donut-wrap">
+                    <div class="grafico" id="graficoEmqDonut" hidden></div>
+                    <div class="emq-body-wrap">
+                      <p class="emq-note">
+                        Diagnóstico <b>próprio</b>: mede, nos eventos que passaram por este servidor, quantos chegaram
+                        com cada campo de correspondência preenchido. <b>Não é</b> a nota oficial de qualidade de
+                        correspondência do Gerenciador de Eventos da Meta — serve para descobrir qual campo está faltando
+                        antes de o evento sair daqui.
+                      </p>
+                      <div class="emq-body" id="emqBody"><div class="dash-empty">Carregando…</div></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- FAIXA 4 · OPERAÇÃO -->
+            <div class="chart-row">
+              <div class="chart-card" id="cardFunil">
+                <div class="chart-card-h">
+                  <h4>Funil de conversão <button type="button" class="ajuda" data-ajuda="dash-funil"></button></h4>
+                </div>
+                <div class="chart-body">
+                  <div class="grafico" id="graficoFunil" hidden></div>
+                  <div class="dash-fallback" id="fallbackFunil"></div>
+                </div>
+              </div>
+
+              <div class="chart-card" id="cardDestinos">
+                <div class="chart-card-h">
+                  <h4>Entregas por destino <button type="button" class="ajuda" data-ajuda="dash-entregas-destino"></button></h4>
+                </div>
+                <div class="chart-body">
+                  <div class="grafico" id="graficoDestinos" hidden></div>
+                  <div class="dash-fallback" id="fallbackDestinos"></div>
+                </div>
+                <div class="dash-destinos-info" id="destinosInfo"></div>
+              </div>
+            </div>
+
+            <!-- FAIXA 5 · COMPRAS SEM ATRIBUIÇÃO -->
+            <!-- O botão de ajuda fica FORA do <summary>: um clique nele dentro do texto
+                 clicável do <details> arriscaria abrir/fechar o bloco junto com o balão,
+                 já que os dois reagem ao mesmo evento de clique. -->
+            <div class="dash-sem-atrib-head">
+              <span>Compras sem atribuição <button type="button" class="ajuda" data-ajuda="dash-sem-atribuicao"></button></span>
+            </div>
+            <details class="dash-sem-atrib" id="semAtribDetalhe">
+              <summary>
+                <span id="semAtribResumo">Compras sem origem identificada</span>
+              </summary>
+              <div class="table-wrap">
+                <table id="semAtribTable">
+                  <thead><tr><th>Recebido</th><th>event_id</th><th class="num">Valor</th><th>UTM source</th><th>UTM campaign</th></tr></thead>
+                  <tbody><tr><td colspan="5" class="empty">Carregando…</td></tr></tbody>
+                </table>
+              </div>
+            </details>
+          </div>
+        </section>
+
+        <!-- ═══════════════ ABA AO VIVO ═══════════════ -->
+        <!-- Conteúdo inteiro renderizado por admin/tempo-real.js: a tela é um fluxo de
+             eventos chegando, e marcação estática aqui só duplicaria o que o JS precisa
+             saber montar de qualquer jeito. -->
+        <section class="tab-panel" data-panel="aovivo" id="painelAoVivo"></section>
+
+        <!-- ═══════════════ ABA INSTALAÇÃO ═══════════════ -->
+        <section class="tab-panel" data-panel="setup">
+
+          <!-- Cabeçalho pedagógico curto (2 linhas): a ideia central da instalação,
+               com o detalhe completo atrás de "Entender o desenho completo"
+               (progressive disclosure — o texto longo não compete por atenção com
+               os passos abaixo, que é o que realmente se executa). -->
+          <div class="inst-cabecalho">
+            <p class="inst-resumo">
+              Só o <code>page_view</code> sai do navegador — <b>compra, PIX gerado e lead chegam por
+              webhook, do seu backend.</b> São duas partes independentes de instalar: uma no navegador
+              (Passos 1-2), outra no seu servidor (Passo 3).
+            </p>
+            <details class="divulgacao inst-desenho">
+              <summary>Entender o desenho completo</summary>
+              <div class="origem-lanes">
+                <div class="origem-lane">
+                  <span class="lane-k">Navegador</span>
+                  <span class="lane-evs"><code>page_view</code></span>
+                  <span class="lane-note">+ a identidade do visitante (fbclid, _fbp, _fbc, gclid, utm)</span>
+                </div>
+                <div class="origem-lane is-server">
+                  <span class="lane-k">Backend</span>
+                  <span class="lane-evs"><code>purchase</code><code>pix_gerado</code><code>lead</code><code>begin_checkout</code><code>abandoned_checkout</code></span>
+                  <span class="lane-note">tudo que vale dinheiro passa por aqui</span>
+                </div>
+              </div>
+            </details>
+          </div>
+
+          <!-- Status de configuração dos destinos (Pixel/Token da Meta, Google): é
+               diagnóstico de credencial, não passo de instalação — fica um clique
+               de distância, colapsado por padrão. -->
+          <details class="divulgacao inst-status-destinos">
+            <summary>Status da configuração dos destinos</summary>
+            <div class="setup-checklist" id="setupChecklist">
+              <!-- renderizado dinamicamente pelo JS -->
+            </div>
+          </details>
+
+          <!-- ═══ STEPPER — um passo por vez (progressive disclosure) ═══ -->
+          <div class="stepper" id="instStepper">
+            <div class="stepper-progresso">
+              <div class="stepper-barra"><div class="stepper-barra-fill" id="instProgressoFill"></div></div>
+              <span class="stepper-progresso-label" id="instProgressoLabel">carregando o progresso…</span>
+            </div>
+
+            <!-- PASSO 1 · escolha do método -->
+            <section class="step" id="instStep1">
+              <button type="button" class="step-head" id="instStep1Head" aria-expanded="true" aria-controls="instStep1Body">
+                <span class="step-status" id="instStep1Status"><i data-lucide="circle" aria-hidden="true"></i></span>
+                <span class="step-titulo">Passo 1 · Escolha como instalar</span>
+                <i data-lucide="chevron-down" class="step-chevron" aria-hidden="true"></i>
+              </button>
+              <div class="step-body" id="instStep1Body">
+                <p class="section-d" style="margin-bottom:14px">
+                  Dá para trocar depois, a qualquer momento — a escolha só decide o que aparece no Passo 2.
+                  <button type="button" class="ajuda" data-ajuda="metodo-instalacao"></button>
+                </p>
+                <div class="metodo-escolha" role="radiogroup" aria-label="Como instalar o rastreamento">
+                  <label class="metodo-opcao">
+                    <input type="radio" name="instMetodo" id="instMetodoGtm" value="gtm" />
+                    <span class="metodo-opcao-corpo">
+                      <span class="metodo-opcao-titulo"><i data-lucide="layout-grid" aria-hidden="true"></i> Google Tag Manager</span>
+                      <span class="metodo-opcao-desc">Recomendado se o site já usa GTM. Uma tag colada no container, sem editar o código do site.</span>
+                    </span>
+                  </label>
+                  <label class="metodo-opcao">
+                    <input type="radio" name="instMetodo" id="instMetodoProprio" value="proprio" />
+                    <span class="metodo-opcao-corpo">
+                      <span class="metodo-opcao-titulo"><i data-lucide="code-2" aria-hidden="true"></i> Código no próprio site</span>
+                      <span class="metodo-opcao-desc">Uma linha no <code>&lt;head&gt;</code>, sem precisar de container nem publicar nada no GTM.</span>
+                    </span>
+                  </label>
+                </div>
+              </div>
+            </section>
+
+            <!-- PASSO 2 · identidade + page_view (o conteúdo depende do método escolhido) -->
+            <section class="step" id="instStep2">
+              <button type="button" class="step-head" id="instStep2Head" aria-expanded="false" aria-controls="instStep2Body">
+                <span class="step-status" id="instStep2Status"><i data-lucide="circle" aria-hidden="true"></i></span>
+                <span class="step-titulo">Passo 2 · Identidade e page_view</span>
+                <i data-lucide="chevron-down" class="step-chevron" aria-hidden="true"></i>
+              </button>
+              <div class="step-body" id="instStep2Body">
+                <p class="step-vazio" id="instStep2Vazio">Escolha um método no Passo 1 para ver as instruções certas — só a trilha escolhida aparece aqui.</p>
+
+                <!-- Trilha GTM: uma tag só (rota /g/). Os IDs do DOM são os mesmos de quando
+                     eram duas tags — o #collectorBox continua sendo a caixa de código, agora
+                     com a linha de script da tag única. (Não escrever a tag de script
+                     literalmente aqui: o teste de painel sem script inline casa até dentro
+                     de comentário.) -->
+                <div id="instTrilhaGtm" hidden>
+                  <p class="section-d" style="margin-bottom:12px">
+                    <b>Você vai criar exatamente 1 (uma) tag no GTM.</b> Ela guarda quem é o visitante
+                    e conta que ele viu a página. Se alguma instrução antiga mandou criar duas, ou uma
+                    tag por evento, ela está desatualizada — apague as antigas na mesma publicação.
+                  </p>
+
+                  <div class="callout amber" style="margin-bottom:16px">
+                    <i data-lucide="triangle-alert" aria-hidden="true"></i>
+                    <span>
+                      <b>Nenhuma conversão passa pelo GTM.</b> Não crie tag de compra, de lead nem de
+                      cadastro aqui. Conversão entra pelo webhook do seu backend, no Passo 3.
+                    </span>
+                  </div>
+
+                  <div class="table-wrap" style="margin-bottom:16px">
+                  <table>
+                    <thead>
+                      <tr><th>O quê</th><th>Por onde entra</th></tr>
+                    </thead>
+                    <tbody>
+                      <tr><td>Identidade e origem da campanha (<code>fbclid</code>, <code>gclid</code>, <code>_fbp</code>, <code>_fbc</code>, UTMs)</td><td>Esta tag do GTM</td></tr>
+                      <tr><td><code>page_view</code> — o único evento que nasce no navegador</td><td>Esta tag do GTM</td></tr>
+                      <tr><td>Compra, lead, cadastro, depósito</td><td><b>Webhook do backend</b> (Passo 3)</td></tr>
+                      <tr><td>Payload no formato da Meta e do Google</td><td>Montado <b>aqui neste servidor</b>, não no navegador</td></tr>
+                    </tbody>
+                  </table>
+                  </div>
+
+                  <p class="section-d" style="margin-bottom:16px">
+                    Só isso justifica a tag existir: o GTM responde <i>“quem é essa pessoa e de qual anúncio
+                    ela veio”</i>. O webhook responde <i>“essa pessoa comprou”</i>. O servidor junta os dois e
+                    traduz para cada plataforma.
+                  </p>
+
+                  <article class="tag-card">
+                    <header class="tag-h">
+                      <span class="tag-n">Tag única</span>
+                      <h4>Identidade + page_view</h4>
+                      <span class="tag-when">Acionamento: All Pages</span>
+                    </header>
+                    <p class="section-d">
+                      Uma tag só. Captura no navegador os IDs de marketing (<code>fbclid</code>, <code>_fbp</code>,
+                      <code>_fbc</code>, <code>gclid</code>, <code>utm_source</code>…) e amarra ao
+                      <code>user_id</code> do cliente. Quando a conversão chegar pelo Passo 3, o servidor
+                      <b>já sabe</b> de onde veio o clique. Dispara também o <code>page_view</code> — o único
+                      evento que nasce no navegador — no mesmo arquivo, para garantir que a captura rode antes
+                      dele. A função <code>trk()</code> devolve o <code>event_id</code>: passe esse mesmo valor
+                      como <code>eventID</code> no <code>fbq</code> para a Meta deduplicar navegador × servidor.
+                    </p>
+                    <div class="form-actions" style="margin-top:0">
+                      <button class="btn btn-primary" id="btnGenerateGTM">Gerar o código desta tag</button>
+                    </div>
+
+                    <div id="gtmScriptArea" hidden>
+                      <ol class="passos">
+                        <li>No GTM do site, abra <b>Tags → Nova tag</b>.</li>
+                        <li>Tipo de tag: <b>HTML personalizado</b>.</li>
+                        <li>Cole o código abaixo — é <b>uma linha só</b>. Se o campo já tiver
+                            um bloco grande de JavaScript de uma instalação anterior,
+                            <b>apague tudo</b> e deixe apenas esta linha.</li>
+                        <li>Acionamento: <b>All Pages</b>.</li>
+                        <li>Nome: <b>TrackServer</b>. Salve e publique.</li>
+                      </ol>
+                      <div class="codebox" id="collectorBox" style="white-space:pre;overflow-x:auto;max-height:300px;font-size:0.82rem"></div>
+                      <div class="form-actions">
+                        <button class="btn btn-ghost" id="btnCopyCollector">Copiar código</button>
+                        <a class="btn btn-ghost" id="btnOpenCollector" target="_blank" rel="noopener">Abrir .js</a>
+                      </div>
+
+                      <p class="section-d" style="margin-top:16px">
+                        <b>Por que é uma linha e não o código inteiro?</b> Essa linha baixa a tag deste
+                        servidor, com o endereço e o identificador do seu projeto já embutidos. Assim
+                        você não corre o risco de colar a URL de outro projeto, e quando corrigimos ou
+                        melhoramos a tag você recebe a versão nova <b>sem republicar o container</b>.
+                        Clique em <b>Abrir .js</b> para ver exatamente o que roda.
+                      </p>
+
+                      <p class="section-d">
+                        <b>Como conferir se está funcionando.</b> Abra qualquer página do site
+                        acrescentando <code>?trk_debug=1&amp;fbclid=TESTE123</code> na URL e olhe o
+                        Console do navegador. A tag informa o que capturou, se achou o
+                        <code>user_id</code> e — quando não achar — quais chaves existem no
+                        <code>dataLayer</code>, para você descobrir o nome certo. No Network deve
+                        aparecer um <code>POST</code> para a rota de eventos com status 202.
+                      </p>
+
+                      <div class="callout" style="margin-bottom:0">
+                        <b>Se o site não expõe o código do usuário.</b> Sem <code>user_id</code> o
+                        <code>page_view</code> e a origem da campanha continuam chegando normalmente —
+                        o que não acontece é a ponte de identidade, e sem ela a compra que vier pelo
+                        Passo 3 chega <b>sem o clique do anúncio</b>. Duas saídas: o site fazer
+                        <code>dataLayer.push({ user_id: '…' })</code>, ou chamar
+                        <code>window.trkIdentify({ user_id: '…' })</code> assim que souber quem é o
+                        visitante (login, checkout). Qualquer uma das duas resolve.
+                      </div>
+                    </div>
+                  </article>
+                </div>
+
+                <!-- Trilha "código próprio": tag única, sem GTM nem dataLayer -->
+                <div id="instTrilhaPropria" hidden>
+                  <p class="section-d" style="margin-bottom:16px">
+                    Uma linha só no <code>&lt;head&gt;</code> do site: identidade, <code>page_view</code>
+                    automático (com dedupe por URL) e uma fila para o site chamar <code>trk(...)</code>
+                    mesmo antes do script terminar de carregar. <b>Nenhuma conversão dispara sozinha</b> —
+                    quem chama <code>trk('purchase', …)</code> continua sendo o seu código.
+                  </p>
+
+                  <article class="tag-card">
+                    <header class="tag-h">
+                      <span class="tag-n">Tag única</span>
+                      <h4>Instalar <button type="button" class="ajuda" data-ajuda="tag-unica"></button></h4>
+                      <span class="tag-when">Cole no &lt;head&gt;, em toda página</span>
+                    </header>
+                    <div class="codebox" id="instTagUnicaBox" style="white-space:pre;overflow-x:auto;max-height:140px;font-size:0.82rem"></div>
+                    <div class="form-actions">
+                      <button class="btn btn-ghost" id="btnCopyTagUnica">Copiar código</button>
+                      <a class="btn btn-ghost" id="btnOpenTagUnica" target="_blank" rel="noopener">Abrir .js</a>
+                    </div>
+                  </article>
+
+                  <article class="tag-card">
+                    <header class="tag-h">
+                      <span class="tag-n">Exemplo</span>
+                      <h4>Disparar uma conversão <button type="button" class="ajuda" data-ajuda="trk-queue"></button></h4>
+                    </header>
+                    <p class="section-d">No seu backend/checkout, quando a compra confirmar (ou direto no HTML, via a fila <code>trkQueue</code>, se o script ainda não carregou):</p>
+                    <div class="codebox" id="instExemploPurchase" style="white-space:pre;overflow-x:auto;max-height:150px;font-size:0.82rem"></div>
+                    <div class="form-actions" style="margin-top:8px">
+                      <button class="btn btn-ghost" id="btnCopyExemploPurchase">Copiar exemplo</button>
+                    </div>
+                    <p class="section-d" style="margin-top:16px">E um lead — por exemplo, ao enviar um formulário:</p>
+                    <div class="codebox" id="instExemploLead" style="white-space:pre;overflow-x:auto;max-height:120px;font-size:0.82rem"></div>
+                    <div class="form-actions" style="margin-top:8px">
+                      <button class="btn btn-ghost" id="btnCopyExemploLead">Copiar exemplo</button>
+                    </div>
+                    <p class="section-d" style="margin-top:16px">
+                      Quando o site só descobre quem é o visitante depois — login, checkout assíncrono —
+                      chame <code>window.trkIdentify({ user_id: '...' })</code> assim que souber.
+                      <button type="button" class="ajuda" data-ajuda="trk-identify"></button>
+                    </p>
+                  </article>
+
+                  <article class="tag-card">
+                    <header class="tag-h">
+                      <span class="tag-n">Opcional</span>
+                      <h4>Parâmetros extras <button type="button" class="ajuda" data-ajuda="params-globais"></button></h4>
+                    </header>
+                    <p class="section-d">
+                      Defina <code>window.trkConfig</code> <b>antes</b> da tag: valores fixos em todo evento
+                      (<code>paramsGlobais</code>), onde ler o <code>user_id</code> do seu site
+                      (<code>userIdKeys</code>), e identificadores extras de outras plataformas de anúncio na
+                      URL (<code>clickIds</code> <button type="button" class="ajuda" data-ajuda="click-ids-extra"></button>).
+                    </p>
+                    <div class="codebox" id="instExemploConfig" style="white-space:pre;overflow-x:auto;max-height:170px;font-size:0.82rem"></div>
+                    <div class="form-actions" style="margin-top:8px">
+                      <button class="btn btn-ghost" id="btnCopyExemploConfig">Copiar exemplo</button>
+                    </div>
+                  </article>
+
+                  <article class="tag-card">
+                    <header class="tag-h">
+                      <span class="tag-n">Automático</span>
+                      <h4>Identificadores já capturados sozinhos</h4>
+                    </header>
+                    <p class="section-d">Sem configurar nada, a tag já reconhece da URL e dos cookies:</p>
+                    <div class="ids-auto" id="instIdsAuto"><!-- lista fixa, preenchida uma vez pelo JS --></div>
+                  </article>
+                </div>
+              </div>
+            </section>
+
+            <!-- PASSO 3 · webhook do backend (conteúdo igual ao de antes) -->
+            <section class="step" id="instStep3">
+              <button type="button" class="step-head" id="instStep3Head" aria-expanded="false" aria-controls="instStep3Body">
+                <span class="step-status" id="instStep3Status"><i data-lucide="circle" aria-hidden="true"></i></span>
+                <span class="step-titulo">Passo 3 · Webhook do backend</span>
+                <i data-lucide="chevron-down" class="step-chevron" aria-hidden="true"></i>
+              </button>
+              <div class="step-body" id="instStep3Body">
+                <p class="section-d" style="margin-bottom:16px">
+                  <b>É daqui que vêm compra, PIX gerado e lead.</b> Seu backend manda um POST quando a
+                  conversão acontece; o servidor completa a atribuição com a identidade guardada no Passo 2.
+                </p>
+
+                <h4 class="sub-t">Endpoint</h4>
+                <div class="wh-url">
+                  <span class="method">POST</span>
+                  <code id="whUrl">—</code>
+                  <button class="btn btn-ghost" id="btnCopyUrl">Copiar URL</button>
+                </div>
+
+                <h4 class="sub-t">Autenticação</h4>
+                <div class="ident-grid">
+                  <div class="ident-row">
+                    <span class="ident-label">Token de ingestão <button type="button" class="ajuda" data-ajuda="token-ingestao"></button></span>
+                    <code id="pjIngestToken">—</code>
+                    <button class="btn btn-ghost" type="button" id="btnToggleToken">Mostrar</button>
+                    <button class="btn btn-ghost" type="button" id="btnCopyToken">Copiar</button>
+                  </div>
+                  <div class="ident-row">
+                    <span class="ident-label">Slug <button type="button" class="ajuda" data-ajuda="slug-ingestao"></button></span>
+                    <code id="pjSlug">—</code>
+                    <button class="btn btn-ghost" type="button" id="btnCopySlug">Copiar</button>
+                  </div>
+                  <div class="ident-row">
+                    <span class="ident-label">Endpoint de coleta</span>
+                    <code id="pjCollectUrl">—</code>
+                    <button class="btn btn-ghost" type="button" id="btnCopyCollectUrl">Copiar</button>
+                  </div>
+                </div>
+                <p class="section-d" style="margin-top:10px">
+                  O token vai no cabeçalho <code>Authorization: Bearer &lt;token&gt;</code> e é <b>segredo</b>:
+                  só em chamada server-to-server, nunca em código que roda no navegador. Ele não vem junto com o
+                  projeto — só aparece quando você clica em <b>Mostrar</b>, e cada revelação fica registrada no log.
+                </p>
+
+                <h4 class="sub-t">Exemplo</h4>
+                <p class="section-d">Troque <code>SEU_TOKEN</code> pelo valor revelado acima. Só <code>event_name</code> é obrigatório; o resto melhora a correspondência.</p>
+                <div class="codebox" id="curlBox" style="white-space:pre;overflow-x:auto;max-height:320px;font-size:0.82rem"></div>
+                <div class="form-actions">
+                  <button class="btn btn-ghost" id="btnCopyCurl">Copiar curl</button>
+                  <button class="btn btn-primary" type="button" id="btnGoTestar">Testar agora →</button>
+                </div>
+              </div>
+            </section>
+
+            <!-- PASSO 4 · verificação automática -->
+            <section class="step" id="instStep4">
+              <button type="button" class="step-head" id="instStep4Head" aria-expanded="false" aria-controls="instStep4Body">
+                <span class="step-status" id="instStep4Status"><i data-lucide="circle" aria-hidden="true"></i></span>
+                <span class="step-titulo">Passo 4 · Confirmação</span>
+                <i data-lucide="chevron-down" class="step-chevron" aria-hidden="true"></i>
+              </button>
+              <div class="step-body" id="instStep4Body">
+                <p class="section-d">
+                  Cada linha abaixo é uma <b>evidência</b> de que aquele pedaço rodou de verdade, com a hora
+                  em que aconteceu — não uma leitura do que está configurado. Enquanto este passo estiver
+                  aberto, a lista se atualiza sozinha.
+                </p>
+                <div class="inst-verif" id="instVerifLista"><!-- preenchido pelo JS --></div>
+                <div class="form-actions" style="margin-top:14px">
+                  <button class="btn btn-ghost" type="button" id="instBtnVerificarAgora">Conferir agora</button>
+                </div>
+              </div>
+            </section>
+          </div><!-- /.stepper -->
+        </section>
+
+        <!-- ═══════════════ ABA TESTAR ═══════════════ -->
+        <section class="tab-panel" data-panel="testar">
+          <div class="bloco-h" style="margin-bottom:18px">
+            <span class="bloco-k">Console de testes</span>
+            <h3>Veja exatamente o que sai daqui</h3>
+            <p>Cole um payload em qualquer formato, escolha o que fazer com ele e confira o JSON que chega na plataforma.</p>
+          </div>
+
+          <!-- As duas decisões (o que fazer / para onde) ficam lado a lado: são
+               escolhas curtas, e empilhá-las empurrava o editor de JSON para fora
+               da tela. O payload, que é o que se lê e edita, ganha o espaço. -->
+          <div class="console-decisoes">
+            <!-- ── MODO ── -->
+            <div class="console-bloco">
+              <span class="console-k">1 · O que fazer com o evento <button type="button" class="ajuda" data-ajuda="modos-console-teste"></button></span>
+              <div class="modo-switch" id="modoSwitch" role="radiogroup" aria-label="Modo de envio">
+                <button class="modo is-on" type="button" role="radio" aria-checked="true" data-modo="simular">
+                  <span class="modo-nome">Simular</span>
+                  <span class="modo-sub">nada sai daqui</span>
+                </button>
+                <button class="modo" type="button" role="radio" aria-checked="false" data-modo="teste">
+                  <span class="modo-nome">Teste</span>
+                  <span class="modo-sub">só em Eventos de teste</span>
+                </button>
+                <button class="modo is-real" type="button" role="radio" aria-checked="false" data-modo="real">
+                  <span class="modo-nome">Real</span>
+                  <span class="modo-sub">entra nos dados da conta</span>
+                </button>
+              </div>
+              <p class="modo-risco" id="modoRisco"></p>
+              <div class="modo-aviso" id="modoAviso" hidden></div>
+            </div>
+
+            <!-- ── DESTINO ── -->
+            <div class="console-bloco">
+              <span class="console-k">2 · Para onde <button type="button" class="ajuda" data-ajuda="destino-console-teste"></button></span>
+              <div class="destino-grid" id="destinoGrid"></div>
+            </div>
+          </div>
+
+          <!-- ── PAYLOAD ── -->
+          <div class="console-bloco">
+            <span class="console-k">3 · O payload <button type="button" class="ajuda" data-ajuda="payload-console-teste"></button></span>
+            <div class="modelos-bar" id="modelosBar"><span class="muted">Carregando modelos…</span></div>
+            <textarea id="testPayload" class="payload-editor" spellcheck="false" aria-label="Payload do evento em JSON"></textarea>
+            <div class="payload-foot">
+              <span class="json-status" id="jsonStatus"></span>
+              <button class="btn btn-ghost" type="button" id="btnFormatPayload">Formatar</button>
+            </div>
+          </div>
+
+          <!-- ── DISPARO ── -->
+          <div class="disparo" id="disparoBox">
+            <button class="btn btn-primary btn-lg" type="button" id="btnDisparar">Simular envio</button>
+            <span class="disparo-nota" id="disparoNota"></span>
+          </div>
+          <div class="disparo-confirm" id="disparoConfirm" hidden></div>
+
+          <!-- ── RESULTADO ── -->
+          <div class="resultado" id="resultado" hidden>
+            <div class="res-grid">
+              <article class="res-card" id="resInterpretado">
+                <header class="res-h"><span class="res-n">1</span><h4>Como foi interpretado</h4></header>
+                <div class="res-body" id="resInterpretadoBody"></div>
+              </article>
+
+              <article class="res-card is-wire" id="resEnviado">
+                <header class="res-h">
+                  <span class="res-n">2</span><h4>O que foi enviado</h4>
+                  <button class="btn btn-ghost" type="button" id="btnCopyPayloadEnviado">Copiar JSON</button>
+                </header>
+                <div class="res-body" id="resEnviadoBody"></div>
+              </article>
+            </div>
+
+            <article class="res-card" id="resDiagnostico">
+              <header class="res-h"><span class="res-n">3</span><h4>Diagnóstico da correspondência</h4></header>
+              <div class="res-body" id="resDiagnosticoBody"></div>
+            </article>
+
+            <article class="res-card" id="resResposta" hidden>
+              <header class="res-h"><span class="res-n">4</span><h4>Resposta da plataforma</h4></header>
+              <div class="res-body" id="resRespostaBody"></div>
+            </article>
+          </div>
+
+          <!-- ── AVANÇADO ── -->
+          <details class="console-avancado">
+            <summary>Avançado: passar pelo pipeline completo</summary>
+            <p class="section-d" style="margin-top:12px">
+              O console acima fala direto com a plataforma. Para exercitar o caminho inteiro —
+              ingestão, ponte de identidade, fila e os três destinos de uma vez — dispare o payload
+              no endpoint de webhook do projeto. O evento é gravado e aparece na aba <b>Logs</b>,
+              exatamente como um evento de produção.
+            </p>
+            <div class="form-actions" style="margin-top:0">
+              <button class="btn btn-ghost" type="button" id="btnEnviarIngest">Enviar pelo endpoint de ingestão</button>
+            </div>
+          </details>
+        </section>
+
+        <!-- ═══════════════ ABA DOMÍNIOS ═══════════════ -->
+        <section class="tab-panel" data-panel="dominios">
+
+          <!-- ═══ POR QUE ISSO EXISTE — contexto antes do formulário ═══ -->
+          <div class="bloco-h" style="margin-bottom:14px">
+            <span class="bloco-k">Domínio first-party</span>
+            <h3>Por que configurar um subdomínio seu</h3>
+            <p>Hoje o rastreamento chama o domínio deste servidor. Trocando por um pedaço do seu próprio
+              site (ex.: <code>t.loja.com.br</code>), o navegador passa a tratar os cookies de forma diferente —
+              é essa mudança de tratamento que resolve os três problemas abaixo.</p>
+          </div>
+
+          <div class="dom-porque">
+            <article class="dom-motivo">
+              <div class="dom-motivo-icone"><i data-lucide="cookie" aria-hidden="true"></i></div>
+              <h4>Cookie deixa de ser "de terceiro"</h4>
+              <p>Sem domínio próprio, o navegador vê o cookie de rastreamento como vindo de outro site — e some
+                mais cedo. <button type="button" class="ajuda" data-ajuda="dominio-first-party"></button></p>
+            </article>
+            <article class="dom-motivo">
+              <div class="dom-motivo-icone"><i data-lucide="shield-off" aria-hidden="true"></i></div>
+              <h4>Bloqueadores de anúncio param de cortar</h4>
+              <p>Ad-blockers mantêm listas inteiras de domínios de rastreamento de terceiros — seu próprio
+                subdomínio não entra nelas. <button type="button" class="ajuda" data-ajuda="dominio-first-party"></button></p>
+            </article>
+            <article class="dom-motivo">
+              <div class="dom-motivo-icone"><i data-lucide="timer-off" aria-hidden="true"></i></div>
+              <h4>O cookie dura mais no Safari/iOS</h4>
+              <p>O Safari (ITP) apaga cookies de terceiro em pouco tempo; cookies first-party sobrevivem bem
+                mais — mais eventos chegam com identidade completa. <button type="button" class="ajuda" data-ajuda="dominio-first-party"></button></p>
+            </article>
+          </div>
+
+          <div class="callout" style="margin-top:4px">
+            Resultado prático: mais eventos chegam com <code>fbc</code>/<code>fbclid</code> e <code>gclid</code>
+            preenchidos — a Meta e o Google casam a venda com o anúncio certo com mais frequência (melhor
+            correspondência/EMQ).
+          </div>
+
+          <!-- ═══ TUTORIAL EM 3 PASSOS ═══ -->
+          <h3 class="section-t">Como configurar</h3>
+          <ol class="dom-tutorial">
+            <li class="dom-tutorial-passo">
+              <span class="dom-tutorial-n">1</span>
+              <div class="dom-tutorial-corpo">
+                <h4>Escolha o subdomínio</h4>
+                <p class="section-d">Qualquer nome serve, mas <code>t.</code> (de "tracking") é a convenção mais comum e não colide com nada do site.</p>
+                <form id="domainForm">
+                  <div class="row">
+                    <div class="field">
+                      <label for="domHostname">Hostname</label>
+                      <p class="desc">Sem http/https e sem barra. Ex.: <code>t.loja.com.br</code></p>
+                      <div class="dom-hostname-linha">
+                        <input type="text" id="domHostname" placeholder="t.loja.com.br" autocomplete="off" required />
+                        <button class="btn btn-ghost" type="button" id="btnUsarSugestaoDominio" hidden>Usar sugestão: <code id="domSugestaoTexto">—</code></button>
+                      </div>
+                    </div>
+                    <div class="field">
+                      <label for="domMethod">Método de apontamento <button type="button" class="ajuda" data-ajuda="cname-vs-a"></button></label>
+                      <p class="desc">Como o DNS do cliente vai apontar para este servidor.</p>
+                      <select id="domMethod">
+                        <option value="a_record">Registro A — aponta para o IP do servidor</option>
+                        <option value="cname">CNAME — aponta para o host do serviço</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div class="form-actions" style="margin-top:0">
+                    <button class="btn btn-primary" type="submit">Adicionar domínio</button>
+                  </div>
+                </form>
+              </div>
+            </li>
+
+            <li class="dom-tutorial-passo">
+              <span class="dom-tutorial-n">2</span>
+              <div class="dom-tutorial-corpo">
+                <h4>Crie o registro no seu provedor de DNS</h4>
+                <div class="callout amber" id="domInstruction">Preencha o hostname acima para ver o registro exato a criar no DNS.</div>
+                <p class="section-d">A propagação costuma levar de alguns minutos a algumas horas. <button type="button" class="ajuda" data-ajuda="propagacao-dns"></button></p>
+
+                <div class="dom-guias">
+                  <details class="divulgacao dom-guia">
+                    <summary>Onde fica isso na Cloudflare</summary>
+                    <p class="section-d" style="margin-top:10px">
+                      <b>DNS → Records → Add record.</b> Escolha o Tipo (A ou CNAME), cole o Nome e o
+                      Conteúdo/Alvo mostrados acima, e deixe o <b>Proxy status</b> como "DNS only" (nuvem
+                      cinza) — com o proxy laranja ligado, o certificado deste servidor não consegue ser emitido.
+                    </p>
+                  </details>
+                  <details class="divulgacao dom-guia">
+                    <summary>Onde fica isso no registro.br</summary>
+                    <p class="section-d" style="margin-top:10px">
+                      <b>Painel do domínio → DNS → Editar zona.</b> Adicione uma entrada com o Nome (só o
+                      pedaço antes do domínio, ex.: <code>t</code>) e o Tipo/Valor mostrados acima.
+                    </p>
+                  </details>
+                  <details class="divulgacao dom-guia">
+                    <summary>Onde fica isso no GoDaddy</summary>
+                    <p class="section-d" style="margin-top:10px">
+                      <b>Meus produtos → DNS → Adicionar registro.</b> Escolha o Tipo, preencha Nome e Valor
+                      com os dados mostrados acima e salve.
+                    </p>
+                  </details>
+                </div>
+              </div>
+            </li>
+
+            <li class="dom-tutorial-passo">
+              <span class="dom-tutorial-n">3</span>
+              <div class="dom-tutorial-corpo">
+                <h4>Clique em Verificar</h4>
+                <p class="section-d">O botão <b>Verificar DNS</b> aparece em cada domínio já cadastrado, na lista abaixo. Enquanto o DNS não propagar, pode clicar de novo sem problema.</p>
+              </div>
+            </li>
+          </ol>
+
+          <!-- ═══ DOMÍNIOS DO PROJETO — linha do tempo de status ═══ -->
+          <h3 class="section-t" style="margin-top:32px">Domínios do projeto</h3>
+          <p class="section-d">Cada domínio passa por 4 estágios até ficar ativo — o próprio painel acompanha, sem precisar decifrar um rótulo técnico.</p>
+          <div class="dom-list" id="domainList"><div class="dash-empty">Carregando…</div></div>
+        </section>
+
+        <!-- ═══════════════ ABA META (hub: Visão geral / Falhas / Credenciais / Mapeamento) ═══════════════ -->
+        <section class="tab-panel" data-panel="meta">
+          <nav id="metaSubnav"></nav>
+
+          <!-- ── VISÃO GERAL: saúde do destino + fluxo pedagógico + métricas ── -->
+          <div data-subpainel="visao-geral">
+            <div class="int-status" id="metaStatus">
+              <div class="dash-empty">Carregando estado da integração…</div>
+            </div>
+
+            <div class="fluxo-card" id="metaFluxo"></div>
+
+            <div class="chart-card">
+              <div class="chart-card-h">
+                <h4>Entregas por dia <button type="button" class="ajuda" data-ajuda="dash-entregas-destino"></button></h4>
+              </div>
+              <div class="chart-body">
+                <div class="grafico" id="metaVgGrafico" hidden></div>
+                <div class="dash-fallback" id="metaVgFallback"></div>
+              </div>
+              <div class="dash-destinos-info" id="metaVgInfo"></div>
+            </div>
+          </div>
+
+          <!-- ── FALHAS: montada por admin/falhas.js ── -->
+          <div data-subpainel="falhas" id="metaFalhas" hidden></div>
+
+          <!-- Webhook Studio: inbox de payloads não reconhecidos, editor de mapeamento e
+               o modo com IA. Renderizado por admin/webhook-studio.js. -->
+          <div data-subpainel="webhooks" id="metaWebhooks" hidden></div>
+
+          <form id="metaForm">
+            <!-- ── CREDENCIAIS ── -->
+            <div data-subpainel="credenciais" hidden>
+              <div class="callout ro-note js-cred-note" hidden>
+                <b>Somente leitura.</b> Você está conectado como <b>operador</b>. Apenas administradores
+                alteram credenciais — você pode consultar a configuração, mas não salvar mudanças.
+              </div>
+
+              <section class="bloco">
+                <div class="bloco-h">
+                  <span class="bloco-k">Credenciais</span>
+                  <h3>Para qual Pixel este servidor entrega</h3>
+                  <p>Os três campos saem do mesmo lugar: <b>Gerenciador de Eventos</b> da Meta, na fonte de dados do Pixel.</p>
+                </div>
+
+                <div class="field switch"><input type="checkbox" id="metaEnabled" /> <span>Enviar conversões para a Meta</span></div>
+
+                <div class="row">
+                  <div class="field">
+                    <label for="metaPixelId">Pixel ID <button type="button" class="ajuda" data-ajuda="pixel-id"></button></label>
+                    <p class="desc">Os 15 dígitos no topo da fonte de dados.</p>
+                    <input type="text" id="metaPixelId" placeholder="123456789012345" />
+                  </div>
+                  <div class="field">
+                    <label for="metaTestEventCode">Test Event Code <button type="button" class="ajuda" data-ajuda="test-event-code"></button></label>
+                    <p class="desc" id="metaTestHint">Habilita o modo <b>Teste</b> do console. Pegue em Gerenciador de Eventos → <b>Eventos de teste</b>.</p>
+                    <input type="text" id="metaTestEventCode" placeholder="TEST12345" />
+                  </div>
+                </div>
+
+                <div class="field">
+                  <label for="metaAccessToken">Access Token <button type="button" class="ajuda" data-ajuda="access-token"></button></label>
+                  <p class="desc" id="metaTokenHint">Token da Conversions API. Criptografado; em branco = mantém o atual.</p>
+                  <input type="password" id="metaAccessToken" placeholder="EAAB… (em branco = não altera)" autocomplete="new-password" />
+                </div>
+              </section>
+
+              <div class="form-actions"><button class="btn btn-primary" type="submit">Salvar Meta</button></div>
+            </div>
+
+            <!-- ── MAPEAMENTO DE EVENTOS ── -->
+            <div data-subpainel="mapeamento" hidden>
+              <section class="bloco">
+                <div class="bloco-h">
+                  <span class="bloco-k">Mapeamento de eventos</span>
+                  <h3>Qual evento do seu site vira qual evento na Meta <button type="button" class="ajuda" data-ajuda="deduplicacao"></button></h3>
+                  <p>
+                    O nome escolhido aqui precisa ser <b>idêntico</b> ao que o pixel do navegador usa —
+                    se diferir, a Meta conta o mesmo evento duas vezes em vez de deduplicar.
+                  </p>
+                </div>
+
+                <div class="map-table" id="metaMapTable">
+                  <div class="map-head">
+                    <span>Evento do seu site</span>
+                    <span></span>
+                    <span>Evento na Meta</span>
+                    <span></span>
+                  </div>
+                  <div class="map-rows" id="metaMapRows"></div>
+                </div>
+
+                <div class="map-actions">
+                  <button class="btn btn-ghost" type="button" id="btnAddMapRow">+ Adicionar linha</button>
+                  <span class="map-count muted" id="metaMapCount"></span>
+                </div>
+
+                <details class="map-json" id="metaMapJsonBox">
+                  <summary>Editar como JSON</summary>
+                  <p class="section-d" style="margin-top:12px">
+                    A tabela é a fonte da verdade. Se editar aqui, clique em <b>Aplicar à tabela</b> antes de salvar.
+                  </p>
+                  <textarea id="metaEventMap" aria-label="Mapeamento de eventos em JSON"></textarea>
+                  <div class="form-actions" style="margin-top:10px">
+                    <button class="btn btn-ghost" type="button" id="btnApplyMapJson">Aplicar à tabela</button>
+                    <button class="btn btn-ghost" type="button" id="btnResetMapJson">Descartar edição</button>
+                  </div>
+                </details>
+              </section>
+
+              <div class="form-actions"><button class="btn btn-primary" type="submit">Salvar Meta</button></div>
+            </div>
+          </form>
+        </section>
+
+        <!-- ═══════════════ ABA GOOGLE (hub: Visão geral / Falhas / Credenciais) ═══════════════ -->
+        <section class="tab-panel" data-panel="google">
+          <nav id="googleSubnav"></nav>
+
+          <!-- ── VISÃO GERAL: saúde do destino + fluxo pedagógico + métricas ── -->
+          <div data-subpainel="visao-geral">
+            <div class="int-status" id="googleStatus">
+              <div class="dash-empty">Carregando estado da integração…</div>
+            </div>
+
+            <div class="fluxo-card" id="googleFluxo"></div>
+
+            <div class="chart-card">
+              <div class="chart-card-h">
+                <h4>Entregas por dia <button type="button" class="ajuda" data-ajuda="dash-entregas-destino"></button></h4>
+              </div>
+              <div class="chart-body">
+                <div class="grafico" id="googleVgGrafico" hidden></div>
+                <div class="dash-fallback" id="googleVgFallback"></div>
+              </div>
+              <div class="dash-destinos-info" id="googleVgInfo"></div>
+            </div>
+          </div>
+
+          <!-- ── FALHAS: montada por admin/falhas.js ── -->
+          <div data-subpainel="falhas" id="googleFalhas" hidden></div>
+
+          <!-- ── CREDENCIAIS: formulário original, intacto, agora dentro do sub-painel ── -->
+          <div data-subpainel="credenciais" hidden>
+            <div class="callout ro-note js-cred-note" hidden>
+              <b>Somente leitura.</b> Você está conectado como <b>operador</b>. Apenas administradores
+              alteram credenciais — você pode consultar a configuração, mas não salvar mudanças.
+            </div>
+            <form id="googleForm">
+              <div class="field switch"><input type="checkbox" id="gEnabled" /> <span>Enviar conversões para o Google</span></div>
+              <div class="field">
+                <label for="gRoute">Rota <button type="button" class="ajuda" data-ajuda="google-rota"></button></label>
+                <select id="gRoute">
+                  <option value="ga4_mp">GA4 Measurement Protocol</option>
+                  <option value="google_ads">Google Ads API — Enhanced Conversions</option>
+                </select>
+              </div>
+
+              <div id="ga4Fields">
+                <div class="row">
+                  <div class="field">
+                    <label for="gMeasurementId">Measurement ID <button type="button" class="ajuda" data-ajuda="measurement-id"></button></label>
+                    <input type="text" id="gMeasurementId" placeholder="G-XXXXXXX" autocomplete="off" />
+                  </div>
+                  <div class="field">
+                    <label for="gApiSecret">API Secret <button type="button" class="ajuda" data-ajuda="api-secret"></button></label>
+                    <p class="desc" id="gApiSecretHint">Criptografado; em branco = mantém o atual.</p>
+                    <input type="password" id="gApiSecret" placeholder="em branco = não altera" autocomplete="new-password" />
+                  </div>
+                </div>
+                <div class="field">
+                  <label for="gEventMap">Mapeamento de eventos → GA4 (JSON) <button type="button" class="ajuda" data-ajuda="deduplicacao"></button></label>
+                  <p class="desc">Evento do seu site → nome do evento no GA4.</p>
+                  <textarea id="gEventMap"></textarea>
+                </div>
+              </div>
+
+              <div id="adsFields" hidden>
+                <div class="callout">
+                  Envio direto para a conta de anúncios via <b>UploadClickConversions</b>, levando o <code>gclid</code>
+                  (ou <code>gbraid</code>/<code>wbraid</code>) e Enhanced Conversions com e-mail/telefone hasheados.
+                  Exige uma conta Google Ads com <b>acesso à API aprovado</b> (developer token) — sem isso a troca de token
+                  falha e o erro aparece no log do evento, nunca em silêncio. Se você ainda não tem o developer token,
+                  use a rota <b>GA4 Measurement Protocol</b>, que só precisa de Measurement ID e API Secret.
+                  Segredos ficam criptografados. Ver <code>docs/05-tagueamento-google-ads.md</code>.
+                </div>
+                <div class="row">
+                  <div class="field">
+                    <label for="gCustomerId">Customer ID <button type="button" class="ajuda" data-ajuda="customer-id"></button></label>
+                    <p class="desc">Com ou sem traços. Ex.: <code>123-456-7890</code></p>
+                    <input type="text" id="gCustomerId" placeholder="123-456-7890" />
+                  </div>
+                  <div class="field">
+                    <label for="gLoginCustomerId">Login Customer ID</label>
+                    <p class="desc">Opcional — conta MCC gestora.</p>
+                    <input type="text" id="gLoginCustomerId" placeholder="opcional" />
+                  </div>
+                </div>
+                <div class="row">
+                  <div class="field">
+                    <label for="gClientId">OAuth Client ID <button type="button" class="ajuda" data-ajuda="google-oauth-completo"></button></label>
+                    <input type="text" id="gClientId" placeholder="xxxxx.apps.googleusercontent.com" />
+                  </div>
+                  <div class="field">
+                    <label for="gClientSecret">OAuth Client Secret</label>
+                    <p class="desc" id="gClientSecretHint">Criptografado; em branco = mantém.</p>
+                    <input type="password" id="gClientSecret" placeholder="em branco = não altera" autocomplete="new-password" />
+                  </div>
+                </div>
+                <div class="row">
+                  <div class="field">
+                    <label for="gRefreshToken">Refresh Token</label>
+                    <p class="desc" id="gRefreshHint">Criptografado; em branco = mantém.</p>
+                    <input type="password" id="gRefreshToken" placeholder="em branco = não altera" autocomplete="new-password" />
+                  </div>
+                  <div class="field">
+                    <label for="gDeveloperToken">Developer Token</label>
+                    <p class="desc" id="gDevTokenHint">Criptografado; em branco = mantém.</p>
+                    <input type="password" id="gDeveloperToken" placeholder="em branco = não altera" autocomplete="new-password" />
+                  </div>
+                </div>
+                <div class="field">
+                  <label for="gConversionActions">Conversion Actions (JSON) <button type="button" class="ajuda" data-ajuda="conversion-action"></button></label>
+                  <p class="desc">Evento → resource name da conversion action. Use <code>"default"</code> como coringa.</p>
+                  <textarea id="gConversionActions" placeholder='{"purchase":"customers/123/conversionActions/456"}'></textarea>
+                </div>
+              </div>
+
+              <div class="form-actions"><button class="btn btn-primary" type="submit">Salvar Google</button></div>
+            </form>
+          </div>
+        </section>
+
+        <!-- ═══════════════ ABA POSTBACK ═══════════════ -->
+        <section class="tab-panel" data-panel="postback">
+          <div class="callout ro-note js-cred-note" hidden>
+            <b>Somente leitura.</b> Você está conectado como <b>operador</b>. Apenas administradores
+            alteram credenciais — você pode consultar a configuração, mas não salvar mudanças.
+          </div>
+          <form id="postbackForm">
+            <div class="field switch"><input type="checkbox" id="pbEnabled" /> <span>Disparar postback quando chegar um evento</span></div>
+
+            <div class="callout" style="margin-bottom:18px">
+              <b>O que é um postback?</b> Quando uma conversão chega por webhook, o servidor pode disparar automaticamente um callback HTTP (GET ou POST) para uma URL externa — como uma rede de afiliados, CRM, ou qualquer sistema que precisa saber que a conversão aconteceu. A URL suporta <b>macros</b> que são substituídas pelos dados reais do evento.
+            </div>
+
+            <div class="field">
+              <label for="pbUrl">URL do Postback (com macros) <button type="button" class="ajuda" data-ajuda="macros-postback"></button></label>
+              <p class="desc">Use <code>{macro}</code> para inserir dados do evento. Ex.: <code>https://rede.com/pb?click_id={fbclid}&event={event_name}&value={value}</code></p>
+              <input type="text" id="pbUrl" placeholder="https://exemplo.com/postback?click_id={fbclid}&event={event_name}&value={value}&currency={currency}" style="font-family:var(--font-mono);font-size:0.85rem" />
+            </div>
+
+            <div class="row">
+              <div class="field">
+                <label for="pbMethod">Método HTTP</label>
+                <select id="pbMethod">
+                  <option value="GET">GET — dados na URL (macros)</option>
+                  <option value="POST">POST — dados no body (JSON com todos os campos)</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="pbHeaders">Headers customizados (JSON, opcional)</label>
+                <p class="desc">Ex.: <code>{"Authorization": "Bearer token123"}</code></p>
+                <input type="text" id="pbHeaders" placeholder='{}' style="font-family:var(--font-mono);font-size:0.85rem" />
+              </div>
+            </div>
+
+            <div class="field">
+              <label for="pbBearerToken">Bearer token (opcional)</label>
+              <p class="desc" id="pbBearerHint">Criptografado em repouso. Se preenchido, o servidor envia <code>Authorization: Bearer &lt;token&gt;</code> no postback — mais seguro do que colocar o segredo nos headers acima.</p>
+              <input type="password" id="pbBearerToken" placeholder="em branco = não altera" autocomplete="new-password" />
+            </div>
+
+            <div class="field">
+              <label>Eventos que disparam o postback</label>
+              <p class="desc">Marque quais eventos devem disparar. Desmarcados serão ignorados.</p>
+              <div style="display:flex;flex-wrap:wrap;gap:14px;margin-top:8px" id="pbEventFilters">
+                <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:0.9rem"><input type="checkbox" class="pb-ev" value="page_view" /> page_view</label>
+                <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:0.9rem"><input type="checkbox" class="pb-ev" value="view_content" /> view_content</label>
+                <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:0.9rem"><input type="checkbox" class="pb-ev" value="sign_up" /> sign_up</label>
+                <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:0.9rem"><input type="checkbox" class="pb-ev" value="lead" /> lead</label>
+                <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:0.9rem"><input type="checkbox" class="pb-ev" value="add_to_cart" /> add_to_cart</label>
+                <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:0.9rem"><input type="checkbox" class="pb-ev" value="begin_checkout" /> begin_checkout</label>
+                <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:0.9rem"><input type="checkbox" class="pb-ev" value="abandoned_checkout" /> abandoned_checkout</label>
+                <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:0.9rem"><input type="checkbox" class="pb-ev" value="purchase" checked /> purchase</label>
+              </div>
+            </div>
+
+            <div class="form-actions"><button class="btn btn-primary" type="submit">Salvar Postback</button></div>
+          </form>
+
+          <h3 class="section-t" style="margin-top:32px">Macros disponíveis <button type="button" class="ajuda" data-ajuda="macros-postback"></button></h3>
+          <p class="section-d">Use <code>{nome}</code> na URL. No modo POST, todas são enviadas automaticamente no body JSON.</p>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Macro</th><th>Descrição</th><th>Exemplo de valor</th></tr></thead>
+              <tbody>
+                <tr><td><code>{event_name}</code></td><td>Nome do evento</td><td>purchase</td></tr>
+                <tr><td><code>{event_id}</code></td><td>ID único do evento <button type="button" class="ajuda" data-ajuda="event_id"></button></td><td>pedido-9271</td></tr>
+                <tr><td><code>{user_id}</code></td><td>Código do cliente/jogador</td><td>player-4821</td></tr>
+                <tr><td><code>{value}</code></td><td>Valor da conversão</td><td>199.90</td></tr>
+                <tr><td><code>{currency}</code></td><td>Moeda</td><td>BRL</td></tr>
+                <tr><td><code>{email}</code></td><td>Email (texto plano)</td><td>cliente@ex.com</td></tr>
+                <tr><td><code>{phone}</code></td><td>Telefone</td><td>5511999999999</td></tr>
+                <tr><td><code>{fbclid}</code></td><td>Facebook Click ID <button type="button" class="ajuda" data-ajuda="fbclid"></button></td><td>abc123…</td></tr>
+                <tr><td><code>{fbp}</code></td><td>Facebook Browser ID (_fbp) <button type="button" class="ajuda" data-ajuda="fbp"></button></td><td>fb.1.169…</td></tr>
+                <tr><td><code>{fbc}</code></td><td>Facebook Click Cookie (_fbc) <button type="button" class="ajuda" data-ajuda="fbc"></button></td><td>fb.1.169….abc</td></tr>
+                <tr><td><code>{gclid}</code></td><td>Google Click ID <button type="button" class="ajuda" data-ajuda="gclid"></button></td><td>Cj0KCQ…</td></tr>
+                <tr><td><code>{ttclid}</code></td><td>TikTok Click ID</td><td>E.C.P.xxx</td></tr>
+                <tr><td><code>{utm_source}</code></td><td>UTM Source</td><td>facebook</td></tr>
+                <tr><td><code>{ip}</code></td><td>IP do cliente</td><td>189.40.x.x</td></tr>
+                <tr><td><code>{ua}</code></td><td>User-Agent</td><td>Mozilla/5.0…</td></tr>
+                <tr><td><code>{event_time}</code></td><td>Timestamp UNIX</td><td>1722045600</td></tr>
+                <tr><td><code>{page_url}</code></td><td>URL da página</td><td>https://loja.com/…</td></tr>
+                <tr><td><code>{content_name}</code></td><td>Nome do produto</td><td>Curso Pro</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3 class="section-t" style="margin-top:32px">Pré-visualização do Postback</h3>
+          <p class="section-d">Mostra como a URL ficaria com dados de exemplo:</p>
+          <div class="codebox" id="pbPreview" style="word-break:break-all;white-space:pre-wrap;font-size:0.82rem">Configure a URL acima para ver a pré-visualização.</div>
+        </section>
+
+        <!-- ═══════════════ ABA LOGS ═══════════════ -->
+        <section class="tab-panel" data-panel="logs">
+          <div class="form-actions" style="margin-top:0;margin-bottom:16px">
+            <button class="btn btn-ghost" id="btnReloadLogs">Recarregar</button>
+            <span class="muted" id="logsCount"></span>
+          </div>
+          <div class="table-wrap">
+            <table id="logsTable">
+              <thead><tr><th>Recebido</th><th>Evento</th><th class="num">Valor</th><th class="col-origem">Origem</th><th>event_id</th><th>Meta <button type="button" class="ajuda" data-ajuda="colunas-status-logs"></button></th><th>Google <button type="button" class="ajuda" data-ajuda="colunas-status-logs"></button></th><th>Postback <button type="button" class="ajuda" data-ajuda="colunas-status-logs"></button></th><th></th></tr></thead>
+              <tbody id="logsBody"><tr><td colspan="9" class="empty">Nenhum evento ainda.</td></tr></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- ═══════════════ ABA USUÁRIOS ═══════════════ -->
+        <section class="tab-panel" data-panel="usuarios">
+          <div class="callout">
+            <b>Quem entra neste painel.</b> O <b>administrador</b> tem acesso total: projetos,
+            credenciais (Meta, Google, Postback) e gestão de usuários. O <b>operador</b> acompanha
+            dashboard, instalação, domínios e logs — não altera credenciais nem gerencia usuários.
+          </div>
+
+          <h3 class="section-t">Convidar usuário</h3>
+          <p class="section-d">
+            A pessoa recebe um e-mail com um link para definir a própria senha. Enquanto não definir,
+            fica com o status <b>convite pendente</b> e ainda não consegue entrar.
+          </p>
+
+          <form id="usrInviteForm">
+            <div class="row">
+              <div class="field">
+                <label for="usrName">Nome</label>
+                <input type="text" id="usrName" placeholder="Maria Silva" autocomplete="off" required />
+              </div>
+              <div class="field">
+                <label for="usrEmail">E-mail</label>
+                <input type="email" id="usrEmail" placeholder="maria@empresa.com" autocomplete="off" required />
+              </div>
+            </div>
+            <div class="field">
+              <label for="usrRole">Papel <button type="button" class="ajuda" data-ajuda="papeis-usuario"></button></label>
+              <p class="desc" id="usrRoleDesc"></p>
+              <select id="usrRole">
+                <option value="operador" selected>Operador</option>
+                <option value="admin">Administrador</option>
+              </select>
+            </div>
+            <div class="form-actions">
+              <button class="btn btn-primary" type="submit" id="usrInviteSubmit">Enviar convite</button>
+            </div>
+          </form>
+
+          <!-- Aparece quando o backend não conseguiu enviar o e-mail do convite -->
+          <div class="invite-link" id="usrInviteLink" role="alert" hidden>
+            <b>⚠️ O e-mail do convite não foi enviado.</b>
+            <p id="usrInviteMsg">Copie o link abaixo e envie manualmente para a pessoa.</p>
+            <div class="invite-link-row">
+              <code id="usrInviteUrl"></code>
+              <button class="btn btn-ghost" type="button" id="btnCopyInvite">Copiar link</button>
+              <button class="btn btn-ghost" type="button" id="btnCloseInvite">Fechar</button>
+            </div>
+          </div>
+
+          <h3 class="section-t" style="margin-top:32px">Usuários com acesso</h3>
+          <div class="form-actions" style="margin-top:0;margin-bottom:14px">
+            <button class="btn btn-ghost" type="button" id="btnReloadUsuarios">Recarregar</button>
+            <span class="muted" id="usuariosCount"></span>
+          </div>
+          <div class="table-wrap">
+            <table id="usuariosTable">
+              <thead><tr><th>Nome</th><th>E-mail</th><th>Papel <button type="button" class="ajuda" data-ajuda="papeis-usuario"></button></th><th>Status</th><th>Último acesso</th><th></th></tr></thead>
+              <tbody id="usuariosBody"><tr><td colspan="6" class="empty">Carregando…</td></tr></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <!-- Modal novo projeto -->
+  <div class="modal-backdrop" id="modalNew">
+    <div class="modal">
+      <h3>Novo projeto</h3>
+      <form id="newProjectForm">
+        <div class="field">
+          <label for="npName">Nome</label>
+          <input type="text" id="npName" placeholder="Loja Exemplo" required />
+        </div>
+        <div class="field">
+          <label for="npDomain">Domínio</label>
+          <p class="desc">Sem http/https. Ex.: <code>loja.com.br</code></p>
+          <input type="text" id="npDomain" placeholder="exemplo.com.br" required />
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-primary" type="submit">Criar</button>
+          <button class="btn btn-ghost" type="button" id="npCancel">Cancelar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+  <!-- Bibliotecas vendorizadas: a CSP é script-src 'self', então nada vem de CDN. -->
+  <script src="/vendor/echarts.min.js"></script>
+  <script src="/vendor/lucide.min.js"></script>
+
+  <!--
+    O painel é um script clássico dividido em arquivos, sem bundler e sem módulos ES:
+    scripts clássicos compartilham o mesmo escopo global, então a divisão é puramente
+    textual. A ORDEM abaixo é a ordem original do antigo admin.js — mantê-la é o que
+    garante que nada quebre.
+  -->
+  <script src="/admin/nucleo.js"></script>
+  <script src="/admin/ajudas.js"></script>
+  <script src="/admin/tooltip.js"></script>
+  <script src="/admin/icones.js"></script>
+  <script src="/admin/instalacao.js"></script>
+  <script src="/admin/navegacao.js"></script>
+  <script src="/admin/meta.js"></script>
+  <script src="/admin/google.js"></script>
+  <script src="/admin/postback.js"></script>
+  <script src="/admin/logs.js"></script>
+  <script src="/admin/utilitarios.js"></script>
+  <script src="/admin/graficos.js"></script>
+  <script src="/admin/falhas.js"></script>
+  <script src="/admin/dashboard.js"></script>
+  <script src="/admin/dashboard-atribuicao.js"></script>
+  <script src="/admin/dominios.js"></script>
+  <script src="/admin/dashboard-emq.js"></script>
+  <script src="/admin/usuarios.js"></script>
+  <script src="/admin/console-teste.js"></script>
+  <script src="/admin/webhook-studio.js"></script>
+  <script src="/admin/tempo-real.js"></script>
+  <script src="/admin/configuracoes.js"></script>
+  <script src="/admin/marca.js"></script>
+  <script src="/admin/main.js"></script>
+</body>
+</html>

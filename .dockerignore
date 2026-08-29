@@ -1,0 +1,67 @@
+# ---------------------------------------------------------------------------
+# Arquivos que NAO entram no contexto de build do Docker.
+#
+# Alem de deixar o build mais rapido (o contexto inteiro e enviado ao daemon
+# antes de qualquer instrucao rodar), isto e uma barreira de seguranca: um .env
+# que escape para dentro da imagem fica legivel por qualquer um que der
+# `docker history` / `docker cp` na imagem publicada.
+# ---------------------------------------------------------------------------
+
+# Dependencias: sao reinstaladas dentro do container pelo `npm ci`. Copiar o
+# node_modules do host quebraria a imagem quando o host for Windows/macOS e a
+# imagem for Linux (binarios nativos incompativeis).
+node_modules
+npm-debug.log*
+yarn-error.log*
+
+# Segredos — nunca, em hipotese alguma, dentro da imagem.
+.env
+.env.*
+!.env.example
+
+# Historico e metadados do git
+.git
+.gitignore
+.gitattributes
+.github
+
+# Dados locais, banco de dados de desenvolvimento e dumps
+data/
+*.sql
+# ...MENOS as migracoes. Mesma armadilha que existia no .gitignore, e aqui e
+# ainda mais dificil de ver: com esta excecao faltando, o codigo esta no
+# repositorio, o clone funciona, o `npm test` passa — e a IMAGEM sobe sem o
+# esquema. O migrador do boot nao acha nada e o container reinicia em loop.
+!src/db/migrations/*.sql
+*.dump
+*.sqlite
+*.sqlite3
+
+# Documentacao e testes nao sao necessarios em runtime
+docs/
+test/
+coverage/
+**/*.md
+
+# Configuracao de infraestrutura: o Caddyfile e montado como volume pelo
+# compose, nao copiado para dentro da imagem da aplicacao.
+infra/
+Dockerfile
+.dockerignore
+docker-compose.yml
+docker-compose.*.yml
+
+# Editores e sistemas operacionais
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Artefatos diversos
+*.log
+tmp/
+.cache/

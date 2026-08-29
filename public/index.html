@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TrackServer — seu servidor de rastreamento server-side</title>
+  <meta name="description" content="Seu site envia os eventos por webhook para o seu próprio servidor, que trata, protege e reencaminha as conversões para o Meta e o Google." />
+  <link rel="icon" type="image/svg+xml" href="/assets/marca.svg" />
+  <link rel="stylesheet" href="/app.css" />
+  <link rel="stylesheet" href="/estilos/landing.css" />
+  <!-- Vendorizados: `script-src 'self'` continua valendo, nenhum CDN é
+       consultado e nenhuma requisição denuncia quem visitou a página. A ordem
+       importa (defer preserva): o GSAP precisa existir antes de landing.js. -->
+  <script src="/vendor/gsap.min.js" defer></script>
+  <script src="/landing.js" defer></script>
+</head>
+<!-- `lp-page` carrega os tokens da landing. Eles são literais de propósito:
+     esta página é sempre escura, e uma superfície que não acompanha o tema do
+     painel não pode se descrever com os tokens que acompanham o tema — foi
+     exatamente assim que o texto daqui virou 1.14:1 quando o tema escuro
+     passou a ser o padrão. Ver o topo de `estilos/landing.css`. -->
+<body class="lp-page">
+  <!-- ========== PRIMEIRA DOBRA: uma tela, e ela cabe ========== -->
+  <div class="lp-dark">
+    <header class="lp-nav">
+      <a class="lp-marca" href="/">
+        <img src="/assets/marca.svg" alt="" width="26" height="26" />
+        <span>TrackServer</span>
+      </a>
+      <nav class="lp-nav-links">
+        <a href="#como">Como funciona</a>
+        <a href="#eventos">Eventos</a>
+        <a class="btn btn-primary" href="/painel">Entrar</a>
+      </nav>
+    </header>
+
+    <section class="lp-hero" id="hero">
+      <div class="lp-hero-conteudo">
+        <span class="lp-badge" data-anim>Server-side · first-party</span>
+        <h1 data-anim>Cada conversão sai do seu servidor — <span class="lp-hl">não do navegador do cliente.</span></h1>
+        <p class="lp-lead" data-anim>
+          Seu site envia os eventos por <strong>webhook</strong> para o seu próprio servidor. Ele trata,
+          protege os dados e reencaminha via API de Conversões para o <strong>Meta</strong> e o <strong>Google</strong>.
+          Sem depender de terceiros, sem ser barrado por bloqueadores.
+        </p>
+        <div class="lp-cta" data-anim>
+          <a class="btn btn-primary btn-lg" href="/painel">Abrir o painel</a>
+          <a class="btn btn-ghost btn-lg" href="#como">Ver como funciona</a>
+        </div>
+        <p class="lp-hint" data-anim>Entrada por e-mail e senha, com convite de usuário e papéis de administrador e operador.</p>
+      </div>
+
+      <!-- O diagrama do mecanismo, agora dentro da primeira dobra: é a única
+           posição em que ele tem chance de ser visto por quem não rola. -->
+      <div class="lp-sinal" data-anim>
+        <div class="lp-sinal-painel">
+          <div class="lp-sinal-head">
+            <span class="t">Caminho de um evento</span>
+            <span class="status">webhook → CAPI</span>
+          </div>
+          <!-- Três etapas de verdade, numa lista ordenada: é uma sequência, e
+               era desenhada como duas linhas de grade com um nó invisível para
+               alinhar a segunda. Os fios e o pulso são pseudo-elementos das
+               próprias etapas — decoração não precisa de nó no DOM. -->
+          <ol class="lp-fluxo">
+            <li class="lp-etapa">
+              <span class="nome">Seu site</span>
+              <span class="sub">dispara o webhook</span>
+            </li>
+            <li class="lp-etapa lp-etapa-core">
+              <span class="nome">Seu servidor</span>
+              <span class="sub">trata · protege · roteia</span>
+            </li>
+            <li class="lp-etapa lp-etapa-dests">
+              <span class="nome">Meta CAPI · Google</span>
+              <span class="sub">API de Conversões</span>
+            </li>
+          </ol>
+          <div class="lp-chips">
+            <span class="lp-chip">page_view</span>
+            <span class="lp-chip">sign_up</span>
+            <span class="lp-chip">begin_checkout</span>
+            <span class="lp-chip">pix_gerado</span>
+            <span class="lp-chip">abandoned_checkout</span>
+            <span class="lp-chip">purchase</span>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- ========== DOBRAS DE CONTEÚDO ========== -->
+  <main class="lp-conteudo">
+    <section class="lp-bloco" id="como">
+      <span class="eyebrow">Como funciona</span>
+      <h2>Três passos, um webhook.</h2>
+      <p class="lp-sub">Você não instala SDK nem depende do navegador manter a aba aberta. É uma chamada HTTP.</p>
+      <div class="lp-passos">
+        <div class="lp-passo">
+          <div class="k">01</div>
+          <h3>Cadastre o site</h3>
+          <p>No painel, crie o projeto e receba a URL de webhook exclusiva dele.</p>
+        </div>
+        <div class="lp-passo">
+          <div class="k">02</div>
+          <h3>Dispare o evento</h3>
+          <p>Seu backend manda um POST para essa URL dizendo qual evento aconteceu — no formato que ele já usa hoje.</p>
+        </div>
+        <div class="lp-passo">
+          <div class="k">03</div>
+          <h3>O servidor reencaminha</h3>
+          <p>Ele hasheia os dados sensíveis e envia a conversão para o Meta e o Google por você.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="lp-bloco" id="eventos">
+      <span class="eyebrow">Os eventos</span>
+      <h2>Seis eventos cobrem o funil inteiro.</h2>
+      <p class="lp-sub">O campo <code>event_name</code> no webhook diz qual é. Cada um já tem o mapeamento sugerido para Meta e Google.</p>
+      <div class="lp-eventos">
+        <div class="lp-evento">
+          <span class="tok">page_view</span>
+          <h3>Pageview</h3>
+          <p>Uma página foi vista. Topo do funil, base para remarketing.</p>
+          <div class="maps"><span>Meta · PageView</span><span>GA4 · page_view</span></div>
+        </div>
+        <div class="lp-evento">
+          <span class="tok">sign_up</span>
+          <h3>Cadastro</h3>
+          <p>O visitante criou conta ou deixou os dados. Um lead entrou.</p>
+          <div class="maps"><span>Meta · CompleteRegistration</span><span>GA4 · sign_up</span></div>
+        </div>
+        <div class="lp-evento">
+          <span class="tok">begin_checkout</span>
+          <h3>Início de checkout</h3>
+          <p>Começou a finalizar a compra. Sinal forte de intenção.</p>
+          <div class="maps"><span>Meta · InitiateCheckout</span><span>GA4 · begin_checkout</span></div>
+        </div>
+        <div class="lp-evento">
+          <span class="tok">pix_gerado</span>
+          <h3>PIX gerado</h3>
+          <p>O comprador pediu o código para pagar. Intenção forte — mas ainda não é receita.</p>
+          <div class="maps"><span>Meta · AddPaymentInfo</span><span>GA4 · add_payment_info</span></div>
+        </div>
+        <div class="lp-evento">
+          <span class="tok">abandoned_checkout</span>
+          <h3>Checkout abandonado</h3>
+          <p>Começou mas não concluiu. Seu backend dispara após o tempo limite.</p>
+          <div class="maps"><span>Meta · evento personalizado</span><span>GA4 · abandoned_checkout</span></div>
+        </div>
+        <div class="lp-evento">
+          <span class="tok">purchase</span>
+          <h3>Compra realizada</h3>
+          <p>Pagamento confirmado. A conversão que otimiza suas campanhas.</p>
+          <div class="maps"><span>Meta · Purchase</span><span>GA4 · purchase</span></div>
+        </div>
+        <div class="lp-evento lp-evento-aberto">
+          <p>Precisa de outro evento? É só mandar outro <code>event_name</code> no webhook — o servidor aceita e você mapeia no painel.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="lp-bloco">
+      <span class="eyebrow">Por que server-side</span>
+      <h2>O navegador perde conversões. O servidor não.</h2>
+      <div class="lp-compara">
+        <div class="col">
+          <h3>Só pixel no navegador</h3>
+          <ul>
+            <li>Bloqueado por ad-blocker e extensões</li>
+            <li>Cortado pelo Safari (ITP) em 7 dias</li>
+            <li>Some se o cliente fecha a aba antes do envio</li>
+            <li>Depende de cookie de terceiro</li>
+          </ul>
+        </div>
+        <div class="col win">
+          <h3>Com o TrackServer</h3>
+          <ul>
+            <li>Passa: o tráfego é do seu próprio domínio</li>
+            <li>Cookie first-party sobrevive ao ITP</li>
+            <li>O servidor completa o envio de qualquer forma</li>
+            <li>Deduplica com o pixel pelo mesmo event_id</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div class="lp-faixa">
+    <div class="lp-faixa-inner">
+      <h2>Tire suas conversões do navegador.</h2>
+      <p>Cadastre um site, copie a URL de webhook e mande o primeiro evento em minutos.</p>
+      <a class="btn btn-primary btn-lg" href="/painel">Abrir o painel</a>
+    </div>
+  </div>
+
+  <footer class="lp-rodape">
+    <div class="wrap">
+      <span>TrackServer</span>
+      <span class="mono">rastreamento server-side · Meta CAPI + Google · projeto próprio</span>
+    </div>
+  </footer>
+</body>
+</html>
