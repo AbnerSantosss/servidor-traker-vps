@@ -11,31 +11,38 @@
 #      Compose path: docker-compose.yml
 #   2. Em "Environment variables", cadastre pelo menos:
 #      POSTGRES_PASSWORD, APP_SECRET, PUBLIC_HOST, ADMIN_EMAIL, ADMIN_PASSWORD,
-#      SMTP_USER, SMTP_PASS, SMTP_FROM e TUNNEL_TOKEN.
+#      SMTP_USER, SMTP_PASS e SMTP_FROM.
 #      (Todas as demais tem valor padrao — ver o bloco x-app-env abaixo.)
 #   3. Deploy the stack. O Portainer clona, substitui os ${VAR} e sobe.
-#   4. No painel da Cloudflare (Zero Trust > Networks > Tunnels), aponte o
-#      Public Hostname do tunel para o servico HTTP `caddy:80`.
+#   4. No painel da Cloudflare, no tunel que ja existe, adicione uma
+#      "published application route": <PUBLIC_HOST> -> http://localhost:8099
 #   5. Nao ha passo de migracao nem de criacao de admin — ver nota "BOOT
 #      AUTOMATICO" logo abaixo.
 #
 #   Atualizar depois: Stacks > a stack > "Pull and redeploy" (marque
-#   "Re-pull image" para o cloudflared/postgres/caddy e rebuild para a api).
+#   "Re-pull image" para postgres/caddy; a api reconstroi pelo pull_policy).
 #
 # ------------------------ TOPOLOGIA DE REDE --------------------------------
-#   Internet -> Cloudflare (borda, TLS) ~~tunel de saida~~> cloudflared
-#            -> caddy:80 -> api:3000 -> db:5432
+#   Internet -> Cloudflare (borda, TLS) ~~tunel de saida~~> cloudflared (host)
+#            -> 127.0.0.1:8099 -> caddy:80 -> api:3000 -> db:5432
 #
-#   NENHUMA PORTA E PUBLICADA NO HOST. Este e o ponto central do deploy de
-#   homelab: a maquina fica atras de CGNAT/roteador domestico, sem IP publico e
-#   sem port forwarding. Quem estabelece a conexao e o cloudflared, de dentro
-#   para fora; a Cloudflare devolve o trafego por esse mesmo tunel ja aberto.
-#   Como consequencia:
-#     - nao existe superficie de ataque exposta na rede local nem no roteador;
-#     - o TLS termina na borda da Cloudflare, entao o Caddy so fala HTTP na 80
-#       (ver infra/Caddyfile, que tem `auto_https off`);
-#     - publicar qualquer porta aqui seria um caminho paralelo ao tunel,
-#       contornando a autenticacao/WAF da Cloudflare. Nao faca isso.
+#   NAO HA CONTAINER `cloudflared` NESTA STACK, e isso e deliberado. A maquina
+#   ja roda um tunel (`servidor-abner`) que serve dezenas de aplicacoes, e todas
+#   as rotas dele apontam para `localhost:<porta>` ou `192.168.3.16:<porta>` —
+#   ou seja, o cloudflared vive na rede do HOST e nao resolve nome de container.
+#   Subir um segundo cloudflared com o mesmo token criaria duas replicas do
+#   mesmo tunel, e a Cloudflare passaria a sortear entre elas: metade das
+#   requisicoes cairia na replica que nao enxerga esta stack. Por isso o
+#   caminho de entrada e uma porta no host, como nas outras aplicacoes daqui.
+#
+#   O bind e 127.0.0.1, nao 0.0.0.0: o cloudflared roda nesta mesma maquina,
+#   entao o loopback basta, e a aplicacao NAO fica exposta na LAN. Publicar em
+#   0.0.0.0 abriria um caminho paralelo ao tunel, contornando o WAF da
+#   Cloudflare — qualquer dispositivo da casa alcancaria a rota de ingestao.
+#
+#   O TLS termina na borda da Cloudflare; o Caddy so fala HTTP na 80
+#   (ver infra/Caddyfile, que tem `auto_https off`). O banco e a api continuam
+#   sem porta nenhuma no host: so o Caddy e alcancavel, e so pelo loopback.
 #
 # ------------------ POR QUE NAO EXISTE `env_file:` AQUI --------------------
 #   O deploy e feito pelo Portainer a partir de um repositorio Git. O `.env`
@@ -275,36 +282,24 @@ services:
     # nao teriam efeito nenhum aqui, e o proxy nao tem por que enxergar
     # variavel de aplicacao.
     #
-    # SEM `ports:`: o Caddy so precisa ser alcancavel pelo cloudflared, que esta
-    # na mesma rede docker. Publicar 80/443 no host reabriria a porta que o
-    # tunel existe justamente para nao precisar.
-    expose:
-      - "80"
+    # O cloudflared DESTA maquina roda na rede do host (as 24 rotas ja existentes
+    # no tunel `servidor-abner` apontam para `localhost:<porta>` ou
+    # `192.168.3.16:<porta>`), entao ele NAO resolve nomes de container. Para o
+    # tunel alcancar este Caddy, a porta precisa existir no host.
+    #
+    # O bind e em 127.0.0.1 de proposito, e nao em 0.0.0.0: o cloudflared roda na
+    # propria maquina, entao localhost basta, e assim a aplicacao NAO fica
+    # exposta na LAN. Publicar em 0.0.0.0 abriria um caminho paralelo ao tunel —
+    # qualquer dispositivo da casa alcancaria a ingestao sem passar pelo WAF da
+    # Cloudflare. Varias das rotas existentes usam `localhost:`, o que confirma
+    # que o cloudflared enxerga o loopback do host.
+    #
+    # 8099 foi escolhida por nao colidir com nenhuma das portas ja em uso no
+    # tunel (8080, 8081, 8085, 8091, 8092, 8095, 8097 estao ocupadas).
+    ports:
+      - "127.0.0.1:8099:80"
     depends_on:
       - api
-    networks:
-      - interna
-
-  # ------------------- Tunel de entrada (Cloudflare Tunnel) ---------------
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    restart: unless-stopped
-    # --no-autoupdate: a atualizacao automatica reinicia o binario por conta
-    # propria dentro do container, o que confunde o supervisor do Docker (o
-    # container pode ficar "up" com o tunel derrubado). Atualizar aqui e trocar
-    # a imagem via "Re-pull and redeploy" no Portainer.
-    command: tunnel --no-autoupdate run
-    environment:
-      # Token do tunel gerado no Zero Trust > Networks > Tunnels. Ele carrega as
-      # credenciais do tunel inteiro — trate como segredo, so nas variaveis da
-      # stack, nunca no repositorio.
-      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?defina TUNNEL_TOKEN nas variaveis da stack (token do tunel no painel Zero Trust da Cloudflare)}
-    depends_on:
-      - caddy
-    # Sem `ports`: o cloudflared abre uma conexao de SAIDA para a borda da
-    # Cloudflare (443/UDP QUIC, com fallback HTTP/2). Nao ha nada escutando de
-    # fora, e por isso nenhuma regra de firewall ou port forwarding e
-    # necessaria no roteador.
     networks:
       - interna
 

@@ -5,6 +5,33 @@ created: 2026-08-29
 updated: 2026-08-29
 ---
 
+> ## ⚠️ CORREÇÃO — leia antes de seguir este guia
+>
+> Este documento foi escrito assumindo um `cloudflared` **dentro da stack**, com um túnel
+> novo e um `TUNNEL_TOKEN`. **Não é assim que o deploy foi feito.**
+>
+> Ao inspecionar a conta Cloudflare descobrimos que a máquina **já roda um túnel**
+> (`servidor-abner`), servindo 24 aplicações — e todas as rotas dele apontam para
+> `localhost:<porta>` ou `192.168.3.16:<porta>`. Ou seja, o `cloudflared` vive na **rede do
+> host** e não resolve nomes de container. Subir um segundo `cloudflared` com o mesmo token
+> criaria duas réplicas do mesmo túnel, e a Cloudflare sortearia entre elas — metade das
+> requisições cairia na réplica que não enxerga esta stack.
+>
+> **O que vale hoje:**
+>
+> - **Não existe** serviço `cloudflared` nesta stack, e **não existe** a variável `TUNNEL_TOKEN`.
+> - O Caddy publica `127.0.0.1:8099:80` no host (loopback apenas — nada exposto na LAN).
+> - No túnel `servidor-abner` existente, adiciona-se uma *published application route*:
+>   `<PUBLIC_HOST>` → `http://localhost:8099`.
+> - `PUBLIC_HOST` é um subdomínio de `proxserverabner.site`. O `zyraflow.site` **não está**
+>   nessa conta Cloudflare, então não serve para este deploy.
+>
+> Tudo o mais neste guia — variáveis, boot automático, limitação da aba Domínios, armadilhas
+> de WAF, SSE e backup — continua válido. As seções 3.2 a 3.4 e a 6 sobre `cloudflared` estão
+> desatualizadas e serão reescritas.
+
+
+
 # Deploy no homelab com Portainer e Cloudflare Tunnel
 
 Guia passo a passo para colocar o **Servidor Traker** no ar em uma máquina própria

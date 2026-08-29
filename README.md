@@ -12,7 +12,7 @@ Guia completo: [`docs/17-deploy-homelab-cloudflare.md`](docs/17-deploy-homelab-c
 Resumo: Portainer → Stacks → Add stack → **Repository** (não o editor web, que não
 tem contexto de arquivos para o `build:`) → `docker-compose.yml` → cadastrar as
 variáveis (modelo em [`portainer.env.example`](portainer.env.example)) → Deploy →
-apontar o Public Hostname do túnel para `http://caddy:80`.
+adicionar no túnel `servidor-abner` uma rota `<PUBLIC_HOST>` -> `http://localhost:8099`.
 
 Não existe passo manual de migração nem de criação de usuário: `src/server.js`
 chama `waitForDatabase()`, `runMigrations()` e `bootstrapAdmin()` no boot.
@@ -41,8 +41,8 @@ Além disso, ~40 arquivos em comum divergem por dentro — os maiores são
 | | IP público (Oracle/VPS com porta aberta) | Aqui (homelab + túnel) |
 |---|---|---|
 | TLS | Caddy emite via Let's Encrypt | Cloudflare termina na borda |
-| Portas | 80 e 443 publicadas | nenhuma porta publicada |
-| Entrada | conexão de fora para dentro | `cloudflared`, de dentro para fora |
+| Portas | 80 e 443 publicadas | só `127.0.0.1:8099` (loopback, fora da LAN) |
+| Entrada | conexão de fora para dentro | túnel `servidor-abner` do host → `127.0.0.1:8099` |
 | Domínios de cliente | TLS sob demanda funciona | **não funciona** — ver abaixo |
 
 ## O que NÃO funciona neste deploy
