@@ -262,15 +262,22 @@ services:
 
   # --------------------------- Proxy reverso (HTTP) -----------------------
   caddy:
-    image: caddy:2-alpine
+    # O Caddyfile e ASSADO NA IMAGEM, nao montado por volume. Um bind mount
+    # `- ./infra/Caddyfile:/etc/caddy/Caddyfile` FALHA neste deploy: o Portainer
+    # clona o repo para dentro do container dele (/data/compose/<id>/), mas quem
+    # resolve o caminho de origem do mount e o daemon do Docker, que enxerga o
+    # HOST — onde o caminho nao existe. O Docker cria o ausente como diretorio e
+    # a subida morre com "not a directory: Are you trying to mount a directory
+    # onto a file?". Ja o build funciona porque o contexto e enviado pelo
+    # cliente. Ver o comentario completo em infra/Dockerfile.caddy.
+    build:
+      context: ./infra
+      dockerfile: Dockerfile.caddy
+    image: servidor-traker-caddy:latest
+    # Sem isto, alterar o Caddyfile e redeployar reaproveitaria a imagem antiga.
+    pull_policy: build
     restart: unless-stopped
     volumes:
-      # Caddyfile ESPECIFICO deste deploy: auto_https off, site literal `:80` e
-      # reescrita de X-Forwarded-For a partir de CF-Connecting-IP. Montar o
-      # infra/Caddyfile padrao aqui faria o Caddy tentar emitir certificado
-      # Let's Encrypt, o que falha atras do tunel (o desafio HTTP-01 exige a
-      # porta 80 alcancavel da internet).
-      - ./infra/Caddyfile:/etc/caddy/Caddyfile:ro
       # Mesmo sem emitir certificado, o Caddy escreve estado nesses caminhos.
       # Mante-los em volumes nomeados evita reescrita a cada recreate e mantem
       # o arquivo compativel com o compose de producao.

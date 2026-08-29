@@ -1,0 +1,29 @@
+# ---------------------------------------------------------------------------
+# Imagem do Caddy com o Caddyfile ASSADO DENTRO, em vez de montado por volume.
+#
+# POR QUE ISTO EXISTE (nao troque de volta por um bind mount):
+#   O deploy e feito pelo Portainer a partir de um repositorio Git. O Portainer
+#   clona o repo para dentro do container DELE, em /data/compose/<id>/. Um
+#   `- ./infra/Caddyfile:/etc/caddy/Caddyfile:ro` no compose e resolvido pelo
+#   DAEMON do Docker, que enxerga o filesystem do HOST — onde esse caminho nao
+#   existe. O Docker entao cria o caminho ausente como DIRETORIO e a subida
+#   falha com:
+#     "error mounting .../infra/Caddyfile to rootfs at /etc/caddy/Caddyfile:
+#      not a directory: Are you trying to mount a directory onto a file?"
+#
+#   Ja o `build:` funciona porque o contexto e enviado pelo CLIENTE a partir do
+#   filesystem onde o repo foi clonado; o daemon nunca precisa achar o caminho.
+#
+# CONSEQUENCIA PRATICA: alterar o infra/Caddyfile exige reconstruir a imagem.
+# O `pull_policy: build` no compose garante que todo deploy reconstrua, entao
+# um `git push` + "Pull and redeploy" no Portainer ja aplica a mudanca.
+# ---------------------------------------------------------------------------
+FROM caddy:2-alpine
+
+# O contexto de build e ./infra, entao o Caddyfile esta na raiz do contexto.
+COPY Caddyfile /etc/caddy/Caddyfile
+
+# Falha o build se o Caddyfile estiver invalido, em vez de subir um container
+# que reinicia em loop depois. Um erro de sintaxe aqui e barato de achar; o
+# mesmo erro em runtime custa uma janela de eventos perdidos.
+RUN caddy validate --config /etc/caddy/Caddyfile
