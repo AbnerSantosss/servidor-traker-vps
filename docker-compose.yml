@@ -194,6 +194,13 @@ services:
     # Nome fixo da imagem para o worker reaproveitar o mesmo build em vez de
     # compilar duas vezes.
     image: servidor-traker:latest
+    # `pull_policy: build` forca a reconstrucao da imagem a cada deploy. Sem ele,
+    # o Docker standalone ve que `servidor-traker:latest` ja existe no host e
+    # REAPROVEITA a imagem antiga — o Portainer faz o `git pull` do codigo novo e
+    # sobe o container com o codigo velho, sem erro nenhum. O sintoma e cruel:
+    # "fiz deploy e minha alteracao nao apareceu". O proprio Portainer avisa
+    # disso na tela de criacao da stack.
+    pull_policy: build
     restart: unless-stopped
     # init: true coloca um PID 1 de verdade no container. Como o CMD e
     # `npm start`, o node roda como filho do npm; sem o init, processos zumbis
@@ -219,6 +226,13 @@ services:
       context: .
       dockerfile: Dockerfile
     image: servidor-traker:latest
+    # `pull_policy: build` forca a reconstrucao da imagem a cada deploy. Sem ele,
+    # o Docker standalone ve que `servidor-traker:latest` ja existe no host e
+    # REAPROVEITA a imagem antiga — o Portainer faz o `git pull` do codigo novo e
+    # sobe o container com o codigo velho, sem erro nenhum. O sintoma e cruel:
+    # "fiz deploy e minha alteracao nao apareceu". O proprio Portainer avisa
+    # disso na tela de criacao da stack.
+    pull_policy: build
     command: npm run worker
     restart: unless-stopped
     init: true
