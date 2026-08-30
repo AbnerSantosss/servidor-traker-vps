@@ -63,19 +63,40 @@ continuam intactas.
 
 ## Pendências conhecidas
 
-Levantadas na auditoria de 2026-08-29 e **ainda não aplicadas**:
+As três levantadas na auditoria de 2026-08-29 foram **aplicadas em 2026-08-30**
+(commit `bdadec5`), junto com a reconciliação com o código de produção:
 
-1. `src/tenancy/dns-check.js` — a verificação de DNS compara os IPs do domínio do
-   cliente com os de `PUBLIC_HOST`. Como `PUBLIC_HOST` está atrás do anycast da
-   Cloudflare, um domínio de cliente também na Cloudflare pode **casar por engano**
-   e o painel anunciar "aponta para este servidor" para um domínio que nunca
-   chegará aqui.
-2. `public/admin.html` e `public/admin/ajudas.js` — os textos da aba Domínios
-   afirmam que o certificado é emitido automaticamente e mandam deixar o proxy da
-   Cloudflare como "DNS only". Neste deploy é o contrário: sem proxy não há caminho
-   até o túnel.
-3. `src/admin/auth.js` — lê `x-forwarded-for` direto em três lugares, sem respeitar
-   `TRUST_PROXY` (`normalize.js` respeita). Preexistente, não é regressão daqui.
+1. ~~`src/tenancy/dns-check.js` — falso positivo do anycast da Cloudflare.~~
+   **Resolvido.** A decisão saiu para uma função pura `classificarDns()` e o retorno
+   ganhou o campo `status` (`aponta` | `inconclusivo` | `nao_resolve` | `nao_aponta` |
+   `erro`). O CNAME para o nosso host passa a ser checado primeiro, por ser prova
+   sobre nome e imune a proxy; igualdade de IP só vale **fora** das faixas de CDN
+   compartilhado (novo `src/tenancy/redes-proxy.js`). O gate de `/api/caddy/ask`
+   segue negando o que não for `ok: true` — aceitar `inconclusivo` foi tentado e
+   revertido, porque qualquer um abre um handshake TLS com o SNI que quiser, e isso
+   viraria emissão especulativa contra a cota da Let's Encrypt.
+2. ~~Textos da aba Domínios prometendo certificado automático e mandando usar
+   "DNS only".~~ **Resolvido.** Callout persistente no topo da aba, orientação do
+   proxy invertida para a correta, blocos de benefício no condicional e o tutorial
+   recolhido. Nova chave de ajuda `dominio-indisponivel`.
+3. ~~`src/admin/auth.js` lendo `x-forwarded-for` sem respeitar `TRUST_PROXY`.~~
+   **Resolvido.** Os três pontos passaram a usar o `extractClientIp` que
+   `src/ingest/normalize.js` já exportava — sem duplicar a lógica.
+
+### Ainda em aberto
+
+4. **O domínio first-party do cliente não é servível por este deploy.** O projeto em
+   produção usa `t.codigovencedor.com` (a tag publicada no GTM aponta para
+   `https://t.codigovencedor.com/g/bj3j9gc2.js`), e `src/tenancy/first-party.js` faz
+   o endereço da tag sair do domínio verificado do projeto justamente para que os
+   cookies `_fbp`/`_fbc` nasçam no domínio do cliente. Atrás do túnel não há como
+   servir esse hostname, a menos que `codigovencedor.com` esteja na **mesma conta
+   Cloudflare** do túnel — aí basta uma rota de hostname público. Confirmar isso
+   **antes** de qualquer virada: sem ele, a tag instalada para de responder.
+5. **A Cloudflare sobrescreve o cache do script.** O código manda
+   `Cache-Control: public, max-age=300`, mas a resposta no ar volta com
+   `max-age=14400` e `cf-cache-status: REVALIDATED`. Uma tag corrigida leva até
+   4 horas para chegar aos navegadores se o cache não for purgado no deploy.
 
 ## Documentação
 
