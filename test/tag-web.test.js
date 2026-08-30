@@ -10,13 +10,16 @@ import './setup-env.js'; // precisa vir primeiro — define o ambiente antes de 
 
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import vm from 'node:vm';
 
 import { createApp } from '../src/server.js';
 import { runMigrations } from '../src/db/migrate.js';
 import { query, closePool } from '../src/db/pool.js';
 import { createUser } from '../src/db/repos/users.js';
 import { renderTagUnica, renderTagGtm, renderCollector, renderSnippet } from '../src/ingest/scripts.js';
-import { normalizeEvent } from '../src/ingest/normalize.js';
+import { normalizeEvent, montarCustomData } from '../src/ingest/normalize.js';
+import { buildMetaPayload } from '../src/destinations/meta.js';
+import { DEFAULT_META_MAP } from '../src/db/repos/projects.js';
 import { saveIdentity, getIdentity, sanitizeClickIds, mergeIdentityIntoUserData, CLICK_IDS_MAX_KEYS, CLICK_ID_VALUE_MAX_LEN } from '../src/db/repos/identities.js';
 import { interpolate } from '../src/destinations/postback.js';
 
@@ -62,6 +65,65 @@ describe('sanitização da camada aberta (click_ids)', () => {
 
   test('valores vazios ou nulos são descartados', () => {
     assert.deepEqual(sanitizeClickIds({ a: '', b: null, c: undefined, d: '  ', e: 'ok' }), { e: 'ok' });
+  });
+});
+
+// Achado testando o servidor local em 20/08/2026: um purchase com `value` na raiz do
+// payload (em vez de dentro de `custom_data`) respondia 202 e chegava com valor NULO. O
+// resto do normalizador já aceitava a forma solta — o `order_id` da raiz virava `event_id`
+// e o `email` da raiz entrava em `user_data` —, então quem mandasse o payload achatado
+// tinha todo motivo para acreditar que funcionou. Erro que parece sucesso.
+describe('custom_data aceita os campos soltos na raiz do payload', () => {
+  test('value e currency na raiz entram em custom_data', () => {
+    const evento = normalizeEvent({ event_name: 'purchase', value: 297.9, currency: 'BRL' });
+    assert.equal(evento.custom_data.value, 297.9);
+    assert.equal(evento.custom_data.currency, 'BRL');
+  });
+
+  test('o que veio dentro de custom_data ganha da raiz, nunca é sobrescrito', () => {
+    const evento = normalizeEvent({
+      event_name: 'purchase',
+      value: 1,
+      currency: 'USD',
+      custom_data: { value: 297.9, currency: 'BRL' },
+    });
+    assert.equal(evento.custom_data.value, 297.9);
+    assert.equal(evento.custom_data.currency, 'BRL');
+  });
+
+  test('a raiz completa só o que falta em custom_data', () => {
+    const evento = normalizeEvent({
+      event_name: 'purchase',
+      currency: 'BRL',
+      order_id: 'pedido-1',
+      custom_data: { value: 50 },
+    });
+    assert.deepEqual(evento.custom_data, { value: 50, currency: 'BRL', order_id: 'pedido-1' });
+  });
+
+  test('não arrasta campo de fora da lista para dentro de custom_data', () => {
+    // A lista é fechada de propósito: copiar a raiz inteira mandaria user_id, event_name
+    // e qualquer invenção do cliente para dentro do objeto que vai à plataforma.
+    const evento = normalizeEvent({
+      event_name: 'purchase',
+      user_id: 'cliente-1',
+      email: 'a@b.com',
+      apostas_favoritas: 'roleta',
+      value: 10,
+    });
+    assert.deepEqual(Object.keys(evento.custom_data), ['value']);
+  });
+
+  test('campo vazio na raiz não vira chave em custom_data', () => {
+    const evento = normalizeEvent({ event_name: 'purchase', value: '', currency: '   ' });
+    assert.deepEqual(evento.custom_data, {});
+  });
+
+  test('montarCustomData aguenta payload sem custom_data, com custom_data inválido e vazio', () => {
+    assert.deepEqual(montarCustomData({}), {});
+    assert.deepEqual(montarCustomData(null), {});
+    assert.deepEqual(montarCustomData({ custom_data: 'texto', value: 7 }), { value: 7 });
+    assert.deepEqual(montarCustomData({ custom_data: ['a'], value: 7 }), { value: 7 });
   });
 });
 
@@ -268,6 +330,125 @@ describe('tag única do GTM /g/:slug.js — geração', () => {
   test('embute as URLs corretas de ingestão e de coleta', () => {
     assert.ok(js.includes('https://t.exemplo.com/e/slug123'));
     assert.ok(js.includes('https://t.exemplo.com/c/slug123'));
+  });
+});
+
+// A tag rodando de verdade (sandbox do node:vm com um DOM mínimo). O que estes testes
+// protegem é o alerta de ALTA PRIORIDADE do Gerenciador de Eventos da Meta: "o servidor
+// está enviando um valor fbclid modificado no parâmetro fbc".
+//
+// A causa raiz era de ORDEM, não de string: a tag roda ANTES do Pixel (prioridade alta
+// no GTM, de propósito — ela precisa pegar o fbclid antes de qualquer navegação
+// interna), e quem reescreve o cookie `_fbc` é o Pixel. No page_view de um clique NOVO,
+// portanto, o `_fbc` do navegador ainda é o do clique ANTERIOR — e era esse fbclid velho
+// que saía dentro do fbc, ao lado de uma event_source_url com o fbclid novo.
+describe('tag no navegador: o fbc sempre carrega o fbclid do clique atual', () => {
+  const FBCLID_NOVO = 'IwZXh0bgNhZW0BMABhZGlkAasdF-_QWERTYuiop1234567890AbCdEfGhIjKlMnOpQrStUvWxYz'
+    + '_-1234567890AbCdEfGhIjKlMnOpQrStUvWxYzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnop'
+    + 'qrstuvwxyz0123456789_-QWERTYuiopASDFGHJKLzxcvbnm-_0987654321IwAR'
+    + '_aem_AbCdEfGhIjKlMnOpQrStUvWxYz-0123456789ZyXwVuTsRqPoNmLkJiHgFeDcBa_-';
+  const FBCLID_ANTIGO = 'IwAR0CliqueDeUmaCampanhaAntiga_-abcDEF';
+
+  /* DOM mínimo: só o que a tag toca. sendBeacon e fetch viram gravadores dos corpos
+     enviados — é o payload que interessa, não a rede. */
+  function rodarTag({ tag, search, cookie: cookieDoNavegador = '', localStorage: inicial = {} }) {
+    const store = { ...inicial };
+    const sess = {};
+    const enviados = [];
+    const ctx = {
+      console: { log() {}, warn() {}, error() {} },
+      JSON, Date, Math, String, Object, Array, URLSearchParams,
+      Blob: class { constructor(partes) { this.partes = partes; } },
+      navigator: { sendBeacon: (_url, blob) => { enviados.push(blob.partes[0]); return true; } },
+      fetch: (_url, opts) => { enviados.push(opts.body); return Promise.resolve(); },
+      document: { cookie: cookieDoNavegador, title: 'Oferta', referrer: '', currentScript: null },
+      location: { search, href: `https://loja.com/oferta${search}`, pathname: '/oferta' },
+      history: { pushState() {}, replaceState() {} },
+      addEventListener() {},
+      localStorage: {
+        getItem: (k) => (k in store ? store[k] : null),
+        setItem: (k, v) => { store[k] = String(v); },
+      },
+      sessionStorage: {
+        getItem: (k) => (k in sess ? sess[k] : null),
+        setItem: (k, v) => { sess[k] = String(v); },
+      },
+      // As duas fontes de user_id que existem: a /g/ varre o dataLayer, a /w/ lê a global.
+      dataLayer: [{ user_id: 'jogador-8842' }],
+      user_id: 'jogador-8842',
+      crypto: { randomUUID: () => 'evt-teste' },
+    };
+    ctx.window = ctx;
+    vm.createContext(ctx);
+
+    const urls = { ingestUrl: 'https://t.exemplo.com/e/slug123', collectUrl: 'https://t.exemplo.com/c/slug123' };
+    vm.runInContext(tag === 'gtm' ? renderTagGtm(urls) : renderTagUnica(urls), ctx);
+
+    return {
+      localStorage: store,
+      // O primeiro corpo enviado é o da ponte de identidade; o último é o do page_view.
+      identidade: JSON.parse(enviados[0]),
+      evento: JSON.parse(enviados[enviados.length - 1]),
+    };
+  }
+
+  const fbclidDoFbc = (fbc) => (fbc ? String(fbc).split('.').slice(3).join('.') : '');
+
+  for (const tag of ['gtm', 'unica']) {
+    test(`[${tag}] clique novo com cookie _fbc do clique ANTERIOR: vale o novo`, () => {
+      const { evento, identidade } = rodarTag({
+        tag,
+        search: `?utm_source=facebook&fbclid=${FBCLID_NOVO}`,
+        cookie: `_fbp=fb.1.1700000000000.11; _fbc=fb.1.1600000000000.${FBCLID_ANTIGO}`,
+      });
+      assert.equal(evento.user_data.fbclid, FBCLID_NOVO);
+      assert.equal(fbclidDoFbc(evento.user_data.fbc), FBCLID_NOVO,
+        'o fbc não pode sair com o fbclid do clique anterior — é o que a Meta acusa');
+      assert.equal(fbclidDoFbc(identidade.fbc), FBCLID_NOVO, 'a ponte de identidade guarda o mesmo clique');
+      assert.equal(identidade.fbclid, FBCLID_NOVO);
+    });
+
+    test(`[${tag}] clique novo sem cookie _fbc nenhum: o fbc nasce do fbclid da URL`, () => {
+      const { evento } = rodarTag({ tag, search: `?fbclid=${FBCLID_NOVO}`, cookie: '_fbp=fb.1.1700000000000.11' });
+      assert.ok(evento.user_data.fbc.startsWith('fb.1.'), 'formato oficial fb.1.<ts>.<fbclid>');
+      assert.equal(fbclidDoFbc(evento.user_data.fbc), FBCLID_NOVO);
+    });
+
+    test(`[${tag}] cookie _fbc do MESMO clique é preservado inteiro (carimbo do Pixel)`, () => {
+      const fbcDoPixel = `fb.1.1699999999999.${FBCLID_NOVO}`;
+      const { evento } = rodarTag({ tag, search: `?fbclid=${FBCLID_NOVO}`, cookie: `_fbc=${fbcDoPixel}` });
+      assert.equal(evento.user_data.fbc, fbcDoPixel, 'o timestamp do Pixel é o do clique de verdade');
+    });
+
+    test(`[${tag}] sem fbclid na URL, o _fbc do navegador continua mandando`, () => {
+      const fbcDoPixel = `fb.1.1699999999999.${FBCLID_NOVO}`;
+      const { evento } = rodarTag({ tag, search: '', cookie: `_fbc=${fbcDoPixel}` });
+      assert.equal(evento.user_data.fbc, fbcDoPixel);
+    });
+
+    test(`[${tag}] fbclid de 250+ caracteres chega à Meta byte a byte`, () => {
+      const { evento } = rodarTag({ tag, search: `?fbclid=${FBCLID_NOVO}`, cookie: '' });
+      const interno = normalizeEvent(evento, { clientIp: '187.1.2.3', userAgent: 'Mozilla/5.0', source: 'web' });
+      const payload = buildMetaPayload(interno, { domain: 'loja.com' }, { config: { eventMap: DEFAULT_META_MAP, pixelId: '1' } });
+      const fbc = payload.data[0].user_data.fbc;
+      const enviado = fbclidDoFbc(fbc);
+      assert.equal(enviado, FBCLID_NOVO);
+      assert.equal(enviado.length, FBCLID_NOVO.length, 'nada de truncar');
+      assert.notEqual(enviado, FBCLID_NOVO.toLowerCase(), 'nada de baixar a caixa — base64url é case-sensitive');
+      assert.doesNotMatch(fbc, /^[a-f0-9]{64}$/, 'fbc nunca é hasheado');
+    });
+  }
+
+  test('a correção não trouxe let/const/arrow para dentro da tag (ES5 no site do cliente)', () => {
+    for (const js of [
+      renderTagGtm({ ingestUrl: 'https://t/e/s', collectUrl: 'https://t/c/s' }),
+      renderTagUnica({ ingestUrl: 'https://t/e/s', collectUrl: 'https://t/c/s' }),
+    ]) {
+      assert.doesNotMatch(js, /\blet\s/);
+      assert.doesNotMatch(js, /\bconst\s/);
+      assert.doesNotMatch(js, /=>/);
+      assert.doesNotThrow(() => new Function(js));
+    }
   });
 });
 

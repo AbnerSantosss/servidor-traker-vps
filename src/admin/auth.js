@@ -10,35 +10,51 @@ import {
   REMEMBER_TTL_HORAS,
 } from '../db/repos/users.js';
 import { parseCookies } from '../ingest/cookies.js';
+// Mesmo extrator de IP usado na ingestão — de propósito, e não uma segunda convenção:
+// aqui o IP vai para o log de auditoria de login, para o e-mail de "sua senha mudou" e
+// para a chave do rate limit. Ler `x-forwarded-for` cru (como era feito nas três rotas
+// abaixo) deixa qualquer cliente escolher o IP que aparece na auditoria e, pior, trocar
+// de "identidade" a cada tentativa para escapar do limite de força bruta. O helper só
+// aceita o cabeçalho quando TRUST_PROXY declara que existe um proxy na frente.
+import { extractClientIp } from '../ingest/normalize.js';
 import { env, publicBaseUrl } from '../config/env.js';
 import { log } from '../config/log.js';
 import { rateLimit } from '../ingest/rate-limit.js';
 import { enviarEmail } from '../config/mailer.js';
 import { emailRedefinirSenha, emailSenhaAlterada } from '../emails/templates.js';
+import { painelEhSameSite } from './seguranca.js';
 
 export const SESSION_COOKIE = 'traker_sess';
 
-function setSessionCookie(res, token, expiresAt) {
-  // Com o painel na mesma origem, SameSite=Lax já bloqueia o envio do cookie em
-  // requisição vinda de outro site — é a defesa contra CSRF sem custo nenhum.
-  // Com o painel em outra origem, o navegador exigiria SameSite=None (que abre mão
-  // dessa defesa), e aí a proteção passa a ser o cabeçalho exigido por
-  // exigirOrigemDoPainel(). Ver src/admin/seguranca.js.
+// Atributos do cookie de sessão, num lugar só.
+//
+// Setar e limpar PRECISAM usar os mesmos atributos: o navegador só aceita um Set-Cookie
+// cross-site se ele vier `SameSite=None; Secure`, então um logout que respondesse com
+// `SameSite=Lax` seria descartado em silêncio e a sessão continuaria valendo no navegador.
+// Era exatamente o que acontecia antes desta função existir.
+function atributosDoCookie() {
   const separado = env.PANEL_ORIGINS.length > 0;
-  const parts = [
-    `${SESSION_COOKIE}=${token}`,
-    'Path=/',
-    'HttpOnly',
-    separado ? 'SameSite=None' : 'SameSite=Lax',
-    `Expires=${expiresAt.toUTCString()}`,
-  ];
-  // SameSite=None só é aceito pelo navegador junto de Secure.
-  if (env.PUBLIC_SCHEME === 'https' || separado) parts.push('Secure');
+
+  // O painel em outra origem NÃO obriga SameSite=None: `SameSite` é avaliado por site, e
+  // um painel em subdomínio do host da API (app.zyraflow.site ↔ zyraflow.site) é o mesmo
+  // site. Nesse caso o cookie fica `Lax` e a defesa nativa contra CSRF de sites externos
+  // continua de pé — o cabeçalho X-Traker-Painel segue exigido como defesa em
+  // profundidade. Só painel em outro domínio registrável cai para `None`.
+  const sameSite = (!separado || painelEhSameSite()) ? 'Lax' : 'None';
+
+  const attrs = ['Path=/', 'HttpOnly', `SameSite=${sameSite}`];
+  // SameSite=None só é aceito junto de Secure. Em https, Secure sempre.
+  if (env.PUBLIC_SCHEME === 'https' || sameSite === 'None') attrs.push('Secure');
+  return attrs;
+}
+
+function setSessionCookie(res, token, expiresAt) {
+  const parts = [`${SESSION_COOKIE}=${token}`, ...atributosDoCookie(), `Expires=${expiresAt.toUTCString()}`];
   res.append('Set-Cookie', parts.join('; '));
 }
 
 function clearSessionCookie(res) {
-  res.append('Set-Cookie', `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`);
+  res.append('Set-Cookie', [`${SESSION_COOKIE}=`, ...atributosDoCookie(), 'Max-Age=0'].join('; '));
 }
 
 // Middleware: exige sessão válida. Responde 401 em JSON para o painel saber redirecionar.
@@ -80,7 +96,7 @@ export const authRouter = Router();
  */
 authRouter.post('/esqueci-senha', async (req, res) => {
   const email = String(req.body?.email || '').trim().toLowerCase();
-  const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress || 'desconhecido';
+  const ip = extractClientIp(req) || 'desconhecido';
 
   if (!rateLimit(`reset:${ip}`, 10)) {
     return res.status(429).json({ error: 'muitas tentativas, tente novamente em um minuto' });
@@ -132,7 +148,7 @@ authRouter.post('/definir-senha', async (req, res) => {
     await setPassword(registro.user_id, password);
     await consumeUserToken(token);
 
-    const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress;
+    const ip = extractClientIp(req) || undefined;
     const { token: sessao, expiresAt } = await createSession(registro.user_id, {
       userAgent: req.headers['user-agent'],
       ip,
@@ -161,7 +177,9 @@ authRouter.post('/login', async (req, res) => {
   const { email, password, remember } = req.body || {};
 
   // Limite por IP: trava tentativa de força bruta sem depender de infraestrutura externa.
-  const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress || 'desconhecido';
+  // O IP vem do extrator comum, e não do cabeçalho cru: com `x-forwarded-for` livre, um
+  // atacante rodaria 20 tentativas por IP inventado e o limite não limitaria nada.
+  const ip = extractClientIp(req) || 'desconhecido';
   if (!rateLimit(`login:${ip}`, 20)) {
     return res.status(429).json({ error: 'muitas tentativas, tente novamente em um minuto' });
   }

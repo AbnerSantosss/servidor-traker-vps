@@ -6,9 +6,12 @@
 // cliente precise republicar o container do GTM.
 import { Router } from 'express';
 import { getProject, getProjectBySlug } from '../db/repos/projects.js';
+import { baseFirstParty } from '../tenancy/first-party.js';
 
 export const scriptsRouter = Router();
 
+// Host de quem PEDIU o script. Serve apenas de queda: quando o projeto ainda não tem
+// domínio first-party verificado, o comportamento é o de antes.
 function endpointBase(req) {
   const proto = req.headers['x-forwarded-proto'] || req.protocol || 'https';
   return `${proto}://${req.get('host')}`;
@@ -47,7 +50,28 @@ function renderCollector({ collectUrl }) {
 
   /* Se o fbclid sumiu da URL, ainda dá para recuperá-lo de dentro do cookie _fbc
      (formato oficial: fb.1.TIMESTAMP.FBCLID). */
-  function fbclidFromFbc(){ var c=getCookie('_fbc'); if(!c) return ''; var p=c.split('.'); return p.length>=4?p.slice(3).join('.'):''; }
+  function fbclidDeFbc(c){ if(!c) return ''; var p=String(c).split('.'); return p.length>=4?p.slice(3).join('.'):''; }
+  function fbclidFromFbc(){ return fbclidDeFbc(getCookie('_fbc')); }
+
+  /* fbclid DESTE clique. Só existe na URL de entrada, e enquanto estiver ali é ele que
+     manda: esta tag roda ANTES do Pixel (prioridade alta no GTM, de propósito — ela
+     precisa capturar o fbclid antes de qualquer navegação interna), e quem reescreve o
+     cookie _fbc é o Pixel. No page_view de um clique novo, portanto, o _fbc do navegador
+     ainda é o do clique ANTERIOR. */
+  var FBCLID_DA_URL = getQuery('fbclid');
+  /* base64url, sensível a maiúsculas. Valor fora do alfabeto não é fbclid de verdade e
+     não vira fbc — melhor não ter do que fabricar um valor adulterado. */
+  var FBCLID_OK = /^[A-Za-z0-9_-]+$/.test(FBCLID_DA_URL);
+
+  /* Um fbc cujo fbclid não é o do clique atual é PIOR que nenhum: a Meta compara o fbc
+     com o fbclid da URL do evento e marca "o servidor está enviando um valor fbclid
+     modificado no parâmetro fbc". Batendo, preserva-se o cookie inteiro — o timestamp
+     dele é o do clique de verdade. */
+  function fbcCoerente(fbc){
+    if(!FBCLID_OK) return fbc||'';
+    if(fbc && fbclidDeFbc(fbc)===FBCLID_DA_URL) return fbc;
+    return 'fb.1.'+Date.now()+'.'+FBCLID_DA_URL;
+  }
 
   function sticky(store,val){ var v=clean(val); if(v){ lsSet(store,v); return v; } return lsGet(store); }
 
@@ -75,12 +99,14 @@ function renderCollector({ collectUrl }) {
   d.gclid       = sticky('tk_gclid', getQuery('gclid'));
   d.gbraid      = sticky('tk_gbraid', getQuery('gbraid'));
   d.wbraid      = sticky('tk_wbraid', getQuery('wbraid'));
-  d.fbclid      = sticky('tk_fbclid', getQuery('fbclid') || fbclidFromFbc());
+  d.fbclid      = sticky('tk_fbclid', FBCLID_DA_URL || fbclidFromFbc());
   d.ttclid      = sticky('tk_ttclid', getQuery('ttclid'));
   d.clickid     = sticky('tk_clickid', getQuery('clickid'));
   d.tblci       = sticky('tk_tblci', getQuery('tblci'));
   d.fbp         = sticky('tk_fbp', getCookie('_fbp'));
-  d.fbc         = sticky('tk_fbc', getCookie('_fbc'));
+  /* fbcCoerente e não o cookie cru: ver o comentário da função. É aqui que o tk_fbc
+     deixa de poder discordar do tk_fbclid. */
+  d.fbc         = sticky('tk_fbc', fbcCoerente(getCookie('_fbc')));
   d.ttp         = sticky('tk_ttp', getCookie('_ttp'));
   d.utm_source  = sticky('tk_utm_source', getQuery('utm_source'));
   d.utm_medium  = sticky('tk_utm_medium', getQuery('utm_medium'));
@@ -184,6 +210,21 @@ function renderSnippet({ ingestUrl }) {
 
   function getCookie(n){ var m=('; '+document.cookie).split('; '+n+'='); return m.length===2?m.pop().split(';').shift():''; }
   function ls(k){ try{ return localStorage.getItem(k)||''; }catch(e){ return ''; } }
+  function getQuery(n){ try{ return new URLSearchParams(location.search).get(n)||''; }catch(e){ return ''; } }
+
+  /* Coerência entre fbc e fbclid — mesma regra do coletor, repetida aqui porque as duas
+     metades são IIFEs separadas (podem ser servidas em arquivos diferentes: /s/ e /t/).
+     O fbc que carrega o fbclid de OUTRO clique faz a Meta acusar "valor fbclid
+     modificado no parâmetro fbc"; na página de entrada isso é o caso normal, porque
+     quem reescreve o cookie _fbc é o Pixel e ele roda depois desta tag. */
+  function fbclidDeFbc(c){ if(!c) return ''; var p=String(c).split('.'); return p.length>=4?p.slice(3).join('.'):''; }
+  var FBCLID_DA_URL = getQuery('fbclid');
+  var FBCLID_OK = /^[A-Za-z0-9_-]+$/.test(FBCLID_DA_URL);
+  function fbcCoerente(fbc){
+    if(!FBCLID_OK) return fbc||'';
+    if(fbc && fbclidDeFbc(fbc)===FBCLID_DA_URL) return fbc;
+    return 'fb.1.'+Date.now()+'.'+FBCLID_DA_URL;
+  }
 
   /* O cookie _gcl_aw guarda "GCL.TIMESTAMP.GCLID", não o gclid puro. */
   function gclidDoCookie(){ var c=getCookie('_gcl_aw'); if(!c) return ''; var p=c.split('.'); return p.length>=3?p.slice(2).join('.'):c; }
@@ -217,8 +258,8 @@ function renderSnippet({ ingestUrl }) {
       user_id: opts.user_id,
       user_data: Object.assign({
         fbp: getCookie('_fbp') || ls('tk_fbp'),
-        fbc: getCookie('_fbc') || ls('tk_fbc'),
-        fbclid: ls('tk_fbclid'),
+        fbc: fbcCoerente(getCookie('_fbc') || ls('tk_fbc')),
+        fbclid: FBCLID_DA_URL || ls('tk_fbclid'),
         gclid: gclidDoCookie() || ls('tk_gclid'),
         ga_client_id: gaClientId(),
         utm_source: ls('tk_utm_source'),
@@ -354,7 +395,19 @@ function renderTagUnica({ ingestUrl, collectUrl }) {
   }
   /* Se o fbclid sumiu da URL, ainda dá para recuperá-lo de dentro do cookie _fbc
      (formato oficial: fb.1.TIMESTAMP.FBCLID). */
-  function fbclidFromFbc(){ var c=getCookie('_fbc'); if(!c) return ''; var p=c.split('.'); return p.length>=4?p.slice(3).join('.'):''; }
+  function fbclidDeFbc(c){ if(!c) return ''; var p=String(c).split('.'); return p.length>=4?p.slice(3).join('.'):''; }
+  function fbclidFromFbc(){ return fbclidDeFbc(getCookie('_fbc')); }
+
+  /* fbclid DESTE clique (só existe na URL de entrada) e a regra que impede o fbc de
+     carregar o fbclid de um clique anterior — é isso que a Meta detecta como "valor
+     fbclid modificado no parâmetro fbc". Ver o comentário longo em renderCollector. */
+  var FBCLID_DA_URL = getQuery('fbclid');
+  var FBCLID_OK = /^[A-Za-z0-9_-]+$/.test(FBCLID_DA_URL);
+  function fbcCoerente(fbc){
+    if(!FBCLID_OK) return fbc||'';
+    if(fbc && fbclidDeFbc(fbc)===FBCLID_DA_URL) return fbc;
+    return 'fb.1.'+Date.now()+'.'+FBCLID_DA_URL;
+  }
   /* O cookie _gcl_aw guarda "GCL.TIMESTAMP.GCLID", não o gclid puro. */
   function gclidDoCookie(){ var c=getCookie('_gcl_aw'); if(!c) return ''; var p=c.split('.'); return p.length>=3?p.slice(2).join('.'):c; }
   /* O cookie _ga guarda "GA1.1.CLIENT_ID" — o GA4 precisa das duas últimas partes. */
@@ -369,7 +422,7 @@ function renderTagUnica({ ingestUrl, collectUrl }) {
   d.gclid        = sticky('tk_gclid', getQuery('gclid'));
   d.gbraid       = sticky('tk_gbraid', getQuery('gbraid'));
   d.wbraid       = sticky('tk_wbraid', getQuery('wbraid'));
-  d.fbclid       = sticky('tk_fbclid', getQuery('fbclid') || fbclidFromFbc());
+  d.fbclid       = sticky('tk_fbclid', FBCLID_DA_URL || fbclidFromFbc());
   d.ttclid       = sticky('tk_ttclid', getQuery('ttclid'));
   d.clickid      = sticky('tk_clickid', getQuery('clickid'));
   d.tblci        = sticky('tk_tblci', getQuery('tblci'));
@@ -385,7 +438,7 @@ function renderTagUnica({ ingestUrl, collectUrl }) {
   d.obclid       = sticky('tk_obclid', getQuery('obclid'));
   d.kwai_click_id= sticky('tk_kwai_click_id', getQuery('kwai_click_id'));
   d.fbp          = sticky('tk_fbp', getCookie('_fbp'));
-  d.fbc          = sticky('tk_fbc', getCookie('_fbc'));
+  d.fbc          = sticky('tk_fbc', fbcCoerente(getCookie('_fbc')));
   d.ttp          = sticky('tk_ttp', getCookie('_ttp'));
   d.utm_source   = sticky('tk_utm_source', getQuery('utm_source'));
   d.utm_medium   = sticky('tk_utm_medium', getQuery('utm_medium'));
@@ -463,8 +516,8 @@ function renderTagUnica({ ingestUrl, collectUrl }) {
     var id = eventId(nome, opts);
     var userData = {
       fbp: getCookie('_fbp') || lsGet('tk_fbp'),
-      fbc: getCookie('_fbc') || lsGet('tk_fbc'),
-      fbclid: lsGet('tk_fbclid'),
+      fbc: fbcCoerente(getCookie('_fbc') || lsGet('tk_fbc')),
+      fbclid: FBCLID_DA_URL || lsGet('tk_fbclid'),
       gclid: gclidDoCookie() || lsGet('tk_gclid'),
       ga_client_id: gaClientId(),
       gbraid: lsGet('tk_gbraid'),
@@ -586,18 +639,41 @@ async function serveScript(req, res, render, urlBuilder) {
   const project = slug ? await getProjectBySlug(slug) : await getProject(projectId);
 
   res.type('application/javascript; charset=utf-8');
+
+  // CORS aberto, de propósito. Estas rotas servem JavaScript público — é o script que os
+  // sites dos clientes carregam com <script src>, que já dispensa CORS. O cabeçalho existe
+  // para o caso de alguém buscar o mesmo arquivo por `fetch`, que é o que a aba Instalação
+  // do painel faz para exibir o código na tela; sem ele, o painel em host próprio recebe
+  // erro de CORS e mostra um fallback em vez do script real.
+  //
+  // Não há segredo aqui e nenhuma credencial é aceita (`Allow-Credentials` fica de fora
+  // deliberadamente): o conteúdo é o mesmo para qualquer visitante, e qualquer um já pode
+  // obtê-lo com um GET direto.
+  res.set('Access-Control-Allow-Origin', '*');
   if (!project || project.status !== 'active') {
     return res.status(404).send('/* projeto não encontrado */');
   }
   // Cache curto: permite evoluir a tag sem esperar expiração longa no navegador.
   res.set('Cache-Control', 'public, max-age=300');
-  res.send(render({ ...urlBuilder(req, project) }));
+  res.send(render({ ...(await urlBuilder(req, project)) }));
 }
 
-const urls = (req, project) => ({
-  collectUrl: `${endpointBase(req)}/c/${project.slug}`,
-  ingestUrl: `${endpointBase(req)}/e/${project.slug}`,
-});
+// O endereço que a tag vai chamar em produção.
+//
+// NÃO é o host da requisição: a aba Instalação do painel busca este script no host do
+// serviço, e usar esse host escreveria na tag o endereço do serviço em vez do domínio do
+// cliente. O cookie nasceria no domínio errado e o Pixel do cliente não conseguiria
+// lê-lo — sem nenhum erro aparecer. Ver src/tenancy/first-party.js.
+const urls = async (req, project) => {
+  const base = await baseFirstParty(project.id, {
+    preferido: req.get('host'),
+    fallback: endpointBase(req),
+  });
+  return {
+    collectUrl: `${base}/c/${project.slug}`,
+    ingestUrl: `${base}/e/${project.slug}`,
+  };
+};
 
 // Rotas curtas (as recomendadas na instalação).
 scriptsRouter.get('/s/:slug.js', (req, res) => serveScript(req, res, renderCollector, urls));

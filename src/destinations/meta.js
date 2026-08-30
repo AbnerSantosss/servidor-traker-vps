@@ -13,15 +13,55 @@ import { applyConsent } from '../ingest/consent.js';
 import { log } from '../config/log.js';
 
 /**
- * Deriva o _fbc a partir do fbclid quando o cookie não veio.
- * Formato oficial: fb.1.<timestamp_ms>.<fbclid>. O fbc é o campo que amarra a conversão
- * ao clique no anúncio — reconstruí-lo costuma ser o maior ganho isolado de EMQ.
+ * Extrai o fbclid de dentro de um _fbc (`fb.<versão>.<timestamp_ms>.<fbclid>`).
+ * O fbclid é a QUARTA parte em diante: ele nunca contém ponto, mas juntar o resto em vez
+ * de pegar só `p[3]` mantém a função honesta se algum dia contiver.
+ * Devolve string vazia quando o valor não está no formato — nunca inventa nada.
+ */
+export function fbclidDeFbc(fbc) {
+  if (!fbc) return '';
+  const p = String(fbc).split('.');
+  return p.length >= 4 ? p.slice(3).join('.') : '';
+}
+
+/**
+ * Monta o _fbc que vai para a Meta.
+ *
+ * Duas responsabilidades, e a segunda é a que custa dinheiro quando falha:
+ *
+ * 1. **Derivar** o fbc quando só temos o fbclid (cookie ausente, Pixel bloqueado, ITP).
+ *    Formato oficial: `fb.1.<timestamp_ms>.<fbclid>`.
+ * 2. **Corrigir** o fbc que veio do navegador quando o fbclid dentro dele NÃO é o do
+ *    clique deste evento. A Meta compara o fbc com o `fbclid` da URL do evento e, quando
+ *    divergem, marca "o servidor está enviando um valor fbclid modificado no parâmetro
+ *    fbc" — alerta de alta prioridade que degrada atribuição e otimização.
+ *
+ *    A divergência é o caso NORMAL na página de entrada de um clique novo: a tag roda
+ *    ANTES do Pixel (prioridade alta no GTM, de propósito — ela precisa capturar o
+ *    fbclid antes de qualquer navegação interna), e quem reescreve o `_fbc` é o Pixel.
+ *    Ou seja, no page_view do clique novo o cookie ainda carrega o clique ANTERIOR.
+ *    Preferir o cookie cegamente era mandar o fbclid velho para a Meta com a URL do
+ *    clique novo do lado — exatamente o que ela detecta.
+ *
+ * O que NUNCA acontece aqui: alterar o fbclid. Ele é copiado byte a byte (base64url é
+ * sensível a maiúsculas), sem trim, sem lowercase, sem corte.
+ *
+ * Quando o fbc e o fbclid CONCORDAM, o cookie é preservado inteiro — o timestamp dele é
+ * o do clique de verdade, e é melhor que o do evento.
  */
 export function deriveFbc(userData, eventTime) {
-  if (userData.fbc) return userData.fbc;
-  if (!userData.fbclid) return undefined;
+  const fbc = userData.fbc;
+  const fbclid = userData.fbclid;
+
+  // Sem fbclid para comparar, o que veio do navegador é o melhor que temos.
+  if (!fbclid) return fbc || undefined;
+
+  // Cookie coerente com o clique: preserva o carimbo de tempo original.
+  if (fbc && fbclidDeFbc(fbc) === fbclid) return fbc;
+
+  // Sem cookie, cookie malformado ou cookie de OUTRO clique: refaz a partir do fbclid.
   const ts = eventTime ? eventTime * 1000 : Date.now();
-  return `fb.1.${ts}.${userData.fbclid}`;
+  return `fb.1.${ts}.${fbclid}`;
 }
 
 /**

@@ -8,13 +8,14 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 
 import { hashPII, hashPhone, hashZip, hashCountry, hashDataNascimento, encrypt, decrypt, randomSlug } from '../src/config/crypto.js';
-import { buildUserData, deriveFbc, buildMetaPayload, validarEventoMeta } from '../src/destinations/meta.js';
+import { buildUserData, deriveFbc, fbclidDeFbc, buildMetaPayload, validarEventoMeta } from '../src/destinations/meta.js';
 import { DEFAULT_META_MAP } from '../src/db/repos/projects.js';
-import { normalizeEvent, deriveEventId, extractClientIp } from '../src/ingest/normalize.js';
+import { normalizeEvent, deriveEventId, extractClientIp, fbclidDaUrl } from '../src/ingest/normalize.js';
 import { applyConsent } from '../src/ingest/consent.js';
 import { registrableDomain, parseCookies } from '../src/ingest/cookies.js';
 import { buildConversion, formatConversionDateTime, uploadClickConversion } from '../src/destinations/google-ads.js';
 import { adaptarPayload, nomeDoEvento, ipPublico, separarNome } from '../src/ingest/adaptadores.js';
+import { parsePgConnectionString } from '../src/db/pool.js';
 
 const sha256 = (v) => crypto.createHash('sha256').update(v).digest('hex');
 
@@ -86,14 +87,156 @@ describe('user_data da Meta', () => {
     assert.equal(fbc, 'fb.1.1700000000000.IwAR123');
   });
 
-  test('não sobrescreve um fbc que já existe', () => {
-    assert.equal(deriveFbc({ fbc: 'fb.1.999.original', fbclid: 'novo' }, 1700000000), 'fb.1.999.original');
+  test('preserva o fbc do navegador quando ele já carrega o fbclid deste clique', () => {
+    // O carimbo de tempo do cookie é o do clique de verdade — melhor que o do evento.
+    const fbc = 'fb.1.999.IwAR123';
+    assert.equal(deriveFbc({ fbc, fbclid: 'IwAR123' }, 1700000000), fbc);
+  });
+
+  test('sem fbclid para comparar, o fbc que veio do navegador é mantido intacto', () => {
+    assert.equal(deriveFbc({ fbc: 'fb.1.999.original' }, 1700000000), 'fb.1.999.original');
+  });
+
+  // ESTE é o bug que a Meta acusou como "o servidor está enviando um valor fbclid
+  // modificado no parâmetro fbc": na página de entrada de um clique NOVO, o cookie _fbc
+  // do navegador ainda é o do clique ANTERIOR (a tag roda antes do Pixel, e quem
+  // reescreve o cookie é o Pixel). Preferir o cookie cegamente mandava o fbclid velho
+  // junto com a event_source_url do clique novo — divergência que a Meta detecta.
+  test('refaz o fbc quando ele carrega o fbclid de OUTRO clique', () => {
+    const fbc = deriveFbc({ fbc: 'fb.1.999.CLIQUE_ANTIGO', fbclid: 'CLIQUE_NOVO' }, 1700000000);
+    assert.equal(fbc, 'fb.1.1700000000000.CLIQUE_NOVO');
+  });
+
+  test('fbc malformado (sem as quatro partes) não impede a reconstrução pelo fbclid', () => {
+    assert.equal(deriveFbc({ fbc: 'lixo', fbclid: 'IwAR123' }, 1700000000), 'fb.1.1700000000000.IwAR123');
+  });
+
+  test('fbclidDeFbc extrai o fbclid do cookie e não inventa nada fora do formato', () => {
+    assert.equal(fbclidDeFbc('fb.1.1700000000000.IwAR-abc_DEF'), 'IwAR-abc_DEF');
+    assert.equal(fbclidDeFbc('fb.1.1700000000000.'), '');
+    assert.equal(fbclidDeFbc('qualquer-coisa'), '');
+    assert.equal(fbclidDeFbc(''), '');
+    assert.equal(fbclidDeFbc(undefined), '');
   });
 
   test('campos ausentes não viram chave vazia no payload', () => {
     const ud = buildUserData({ email: 'a@b.com' }, 1700000000);
     assert.ok(!('ph' in ud));
     assert.ok(!('fbp' in ud));
+  });
+});
+
+// Alerta de ALTA PRIORIDADE do Gerenciador de Eventos: "o servidor está enviando um valor
+// fbclid modificado no parâmetro fbc (como um valor que foi convertido para letras
+// minúsculas ou truncado)". O fbclid é base64url e SENSÍVEL A MAIÚSCULAS: qualquer
+// normalização de PII aplicada a ele (trim, lowercase, corte) quebra a atribuição em
+// silêncio, e a Meta ainda devolve 200. Estes testes existem para que nenhum refactor
+// futuro volte a tratar identificador de clique como se fosse texto de formulário.
+describe('fbclid: integridade byte a byte dentro do fbc', () => {
+  // fbclid real moderno: prefixo IwZXh, 250+ caracteres, maiúsculas, minúsculas,
+  // sublinhado e hífen. É o formato que quebrava quando alguém truncava em 200 ou
+  // baixava a caixa.
+  const FBCLID = 'IwZXh0bgNhZW0BMABhZGlkAasdF-_QWERTYuiop1234567890AbCdEfGhIjKlMnOpQrStUvWxYz'
+    + '_-1234567890AbCdEfGhIjKlMnOpQrStUvWxYzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnop'
+    + 'qrstuvwxyz0123456789_-QWERTYuiopASDFGHJKLzxcvbnm-_0987654321IwAR'
+    + '_aem_AbCdEfGhIjKlMnOpQrStUvWxYz-0123456789ZyXwVuTsRqPoNmLkJiHgFeDcBa_-';
+  const URL_DO_CLIQUE = `https://loja.com/oferta?utm_source=facebook&fbclid=${FBCLID}&utm_medium=cpc`;
+  const projeto = { destinations: { meta: { config: {} } } };
+  // Dentro da janela de 7 dias da Meta: normalizeEvent troca por "agora" qualquer
+  // event_time mais velho que isso, e o carimbo do fbc derivado sai do event_time.
+  const AGORA = Math.floor(Date.now() / 1000) - 60;
+
+  const fbclidDoPayloadMeta = (evento) => {
+    const fbc = buildMetaPayload(evento, projeto, { config: { eventMap: DEFAULT_META_MAP } }).data[0].user_data.fbc;
+    return fbc ? fbc.split('.').slice(3).join('.') : undefined;
+  };
+
+  test('o fbclid de teste é mesmo longo e de caixa mista (senão o teste não prova nada)', () => {
+    assert.ok(FBCLID.length > 250, 'precisa passar de 250 caracteres');
+    assert.notEqual(FBCLID, FBCLID.toLowerCase(), 'precisa ter maiúsculas');
+    assert.ok(FBCLID.includes('_') && FBCLID.includes('-'), 'precisa ter _ e -');
+  });
+
+  test('fbclidDaUrl extrai o valor cru da query string, sem tocar em nada', () => {
+    assert.equal(fbclidDaUrl(URL_DO_CLIQUE), FBCLID);
+    assert.equal(fbclidDaUrl(`https://loja.com/?fbclid=${FBCLID}#secao`), FBCLID);
+    assert.equal(fbclidDaUrl(`https://loja.com/?fbclid=${FBCLID}`), FBCLID);
+  });
+
+  test('fbclidDaUrl ignora URL sem fbclid e valor fora do alfabeto base64url', () => {
+    assert.equal(fbclidDaUrl('https://loja.com/oferta'), undefined);
+    assert.equal(fbclidDaUrl('https://loja.com/?utm_source=fb'), undefined);
+    assert.equal(fbclidDaUrl(''), undefined);
+    assert.equal(fbclidDaUrl(undefined), undefined);
+    // Percent-encoding aqui significa valor adulterado no caminho: melhor não ter fbclid
+    // do que decodificar e mandar bytes diferentes dos que a Meta emitiu.
+    assert.equal(fbclidDaUrl('https://loja.com/?fbclid=abc%3Ddef'), undefined);
+  });
+
+  test('normalizeEvent devolve o fbclid da URL byte a byte', () => {
+    const e = normalizeEvent({ event_name: 'page_view', page_location: URL_DO_CLIQUE });
+    assert.equal(e.user_data.fbclid, FBCLID);
+    assert.equal(e.user_data.fbclid.length, FBCLID.length, 'nada de truncar');
+    assert.notEqual(e.user_data.fbclid, FBCLID.toLowerCase(), 'nada de baixar a caixa');
+  });
+
+  test('o fbclid da URL vence o sticky do localStorage (é o clique DESTA visita)', () => {
+    const e = normalizeEvent({
+      event_name: 'page_view',
+      page_location: URL_DO_CLIQUE,
+      user_data: { fbclid: 'CLIQUE_ANTIGO_DO_LOCALSTORAGE' },
+    });
+    assert.equal(e.user_data.fbclid, FBCLID);
+  });
+
+  test('sem fbclid na URL, o que a tag capturou continua valendo', () => {
+    const e = normalizeEvent({
+      event_name: 'page_view',
+      page_location: 'https://loja.com/carrinho',
+      user_data: { fbclid: FBCLID },
+    });
+    assert.equal(e.user_data.fbclid, FBCLID);
+  });
+
+  test('page_view sem cookie _fbc: o fbc derivado leva o fbclid INTACTO até a Meta', () => {
+    const e = normalizeEvent({ event_name: 'page_view', event_time: AGORA, page_location: URL_DO_CLIQUE });
+    assert.equal(fbclidDoPayloadMeta(e), FBCLID);
+  });
+
+  test('page_view com cookie _fbc do mesmo clique: fbc preservado, fbclid intacto', () => {
+    const e = normalizeEvent(
+      { event_name: 'page_view', event_time: AGORA, page_location: URL_DO_CLIQUE },
+      { cookies: { _fbc: `fb.1.1699999999999.${FBCLID}` } }
+    );
+    const payload = buildMetaPayload(e, projeto, { config: { eventMap: DEFAULT_META_MAP } });
+    assert.equal(payload.data[0].user_data.fbc, `fb.1.1699999999999.${FBCLID}`);
+  });
+
+  // O caso de produção: clique NOVO na URL, cookie _fbc ainda do clique anterior porque
+  // a tag roda antes do Pixel. Sem a correção, o fbc saía com o fbclid velho ao lado de
+  // uma event_source_url com o novo — e era isso que a Meta acusava.
+  test('cookie _fbc de um clique ANTERIOR não contamina o fbc do clique atual', () => {
+    const e = normalizeEvent(
+      { event_name: 'page_view', event_time: AGORA, page_location: URL_DO_CLIQUE },
+      { cookies: { _fbc: 'fb.1.1600000000000.FbclidDeUmCliqueBemMaisAntigo' } }
+    );
+    const payload = buildMetaPayload(e, projeto, { config: { eventMap: DEFAULT_META_MAP } });
+    assert.equal(payload.data[0].user_data.fbc, `fb.1.${AGORA * 1000}.${FBCLID}`);
+    assert.equal(fbclidDoPayloadMeta(e), fbclidDaUrl(payload.data[0].event_source_url),
+      'o fbclid do fbc precisa bater com o da event_source_url — é a comparação que a Meta faz');
+  });
+
+  test('a ponte de identidade também entrega o fbclid intacto', () => {
+    const e = normalizeEvent({ event_name: 'purchase', event_time: AGORA, custom_data: { value: 1, currency: 'BRL' } });
+    e.user_data.fbclid = FBCLID; // é o que mergeIdentityIntoUserData faz ao preencher a lacuna
+    assert.equal(fbclidDoPayloadMeta(e), FBCLID);
+  });
+
+  test('o fbc nunca sai hasheado, por mais longo que o fbclid seja', () => {
+    const e = normalizeEvent({ event_name: 'page_view', event_time: AGORA, page_location: URL_DO_CLIQUE });
+    const fbc = buildMetaPayload(e, projeto, { config: { eventMap: DEFAULT_META_MAP } }).data[0].user_data.fbc;
+    assert.doesNotMatch(fbc, /^[a-f0-9]{64}$/);
+    assert.ok(fbc.startsWith('fb.1.'));
   });
 });
 
@@ -578,5 +721,48 @@ describe('criptografia de credenciais', () => {
     const slug = randomSlug(8);
     assert.match(slug, /^[23456789bcdfghjkmnpqrstvwxyz]{8}$/);
     assert.notEqual(randomSlug(8), randomSlug(8));
+  });
+});
+
+describe('DATABASE_URL: quebra em campos antes de entregar ao driver', () => {
+  // Estes testes existem por causa de uma falha de produção: o parser de connection string
+  // do `pg` trata `#` como início de fragmento, então uma senha com `#` chegava truncada e
+  // o Postgres recusava a autenticação — sem nada no erro apontando para a senha.
+  test('senha com # sobrevive inteira (o defeito que quebrou o deploy)', () => {
+    const c = parsePgConnectionString('postgres://traker:se#nha#123@db:5432/traker');
+    assert.equal(c.password, 'se#nha#123');
+    assert.equal(c.database, 'traker');
+    assert.equal(c.host, 'db');
+    assert.equal(c.port, 5432);
+  });
+
+  test('percent-encoding é desfeito (senha com @ cadastrada como %40)', () => {
+    assert.equal(parsePgConnectionString('postgres://u:p%40ss@host/banco').password, 'p@ss');
+  });
+
+  test('porta ausente cai no padrão 5432', () => {
+    assert.equal(parsePgConnectionString('postgres://u:p@host/banco').port, 5432);
+  });
+
+  test('sslmode segue a semântica do libpq, não a do driver', () => {
+    // require = cifra sem validar cadeia. `ssl: true` no pg validaria e a conexão morreria
+    // com "self signed certificate" em banco gerenciado com certificado próprio.
+    assert.deepEqual(parsePgConnectionString('postgres://u:p@h/b?sslmode=require').ssl, { rejectUnauthorized: false });
+    assert.deepEqual(parsePgConnectionString('postgres://u:p@h/b?sslmode=verify-full').ssl, { rejectUnauthorized: true });
+    assert.equal(parsePgConnectionString('postgres://u:p@h/b?sslmode=disable').ssl, false);
+  });
+
+  test('aceita o esquema postgresql:// além de postgres://', () => {
+    assert.equal(parsePgConnectionString('postgresql://u:p@h:6432/b').port, 6432);
+  });
+
+  test('URL inválida falha no boot, e a mensagem não vaza a senha', () => {
+    for (const ruim of ['', '   ', 'mysql://u:p@h/b', 'sem-esquema']) {
+      assert.throws(() => parsePgConnectionString(ruim), (err) => {
+        assert.match(err.message, /DATABASE_URL/);
+        assert.ok(!err.message.includes('p@h'), 'a mensagem de erro não pode conter a URL');
+        return true;
+      });
+    }
   });
 });

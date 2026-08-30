@@ -687,45 +687,86 @@
         <!-- ═══════════════ ABA DOMÍNIOS ═══════════════ -->
         <section class="tab-panel" data-panel="dominios">
 
-          <!-- ═══ POR QUE ISSO EXISTE — contexto antes do formulário ═══ -->
+          <!-- ═══ AVISO PERSISTENTE — o recurso desta aba não opera neste deploy ═══ -->
+          <!-- Pendência da auditoria de 2026-08-29: esta tela prometia certificado emitido
+               automaticamente e mandava deixar o proxy da Cloudflare em "DNS only". As duas
+               coisas valiam para o deploy com IP público; atrás do Cloudflare Tunnel são
+               falsas (ver docs/17-deploy-homelab-cloudflare.md §5). O aviso vem antes do
+               formulário de propósito: é barato ler agora e caro descobrir depois de esperar
+               dias por um estágio que nunca vai acender. -->
+          <div class="callout amber" style="margin-bottom:18px">
+            <i data-lucide="triangle-alert" aria-hidden="true"></i>
+            <span>
+              <b>Apontar um domínio seu para cá não funciona neste servidor.</b> Este deploy é
+              publicado por um túnel da Cloudflare: não existe IP público para o seu DNS apontar, e
+              a Cloudflare só emite certificado para domínios que estejam na conta dela. Sem
+              certificado, o navegador não abre HTTPS no seu subdomínio — então o coletor
+              first-party não sobe.
+              <button type="button" class="ajuda" data-ajuda="dominio-indisponivel"></button>
+              <br><br>
+              <b>O que você vai ver se cadastrar mesmo assim:</b> o domínio entra na lista e a barra
+              de progresso para em <b>"DNS ok" (2 de 4) para sempre</b>. Não é propagação pendente
+              nem lentidão: os dois últimos estágios só acendem quando o servidor emite o
+              certificado sob demanda, o que não acontece aqui. Não há o que aguardar.
+              <br><br>
+              <b>O caminho que funciona hoje</b> está na aba <b>Instalação</b>: o webhook do seu
+              backend (<code>/e/…</code>) e a tag do site (<code>/c/…</code>) usam os endereços
+              deste servidor e não dependem de domínio nenhum seu. A operação é webhook-first — o
+              <code>fbc</code>/<code>fbclid</code> e o <code>gclid</code> viajam dentro do evento,
+              e a Meta e o Google atribuem a venda do mesmo jeito, porque nenhum dos dois olha o
+              domínio de quem envia.
+            </span>
+          </div>
+
+          <!-- ═══ PARA QUE ISSO EXISTE — contexto antes do formulário ═══ -->
           <div class="bloco-h" style="margin-bottom:14px">
             <span class="bloco-k">Domínio first-party</span>
-            <h3>Por que configurar um subdomínio seu</h3>
-            <p>Hoje o rastreamento chama o domínio deste servidor. Trocando por um pedaço do seu próprio
-              site (ex.: <code>t.loja.com.br</code>), o navegador passa a tratar os cookies de forma diferente —
-              é essa mudança de tratamento que resolve os três problemas abaixo.</p>
+            <h3>Para que serviria um subdomínio seu</h3>
+            <p>Hoje o rastreamento chama o domínio deste servidor, e vai continuar assim. Apontar um
+              pedaço do seu próprio site (ex.: <code>t.loja.com.br</code>) para cá mudaria a forma como
+              o navegador trata os cookies — são os três ganhos abaixo. Eles ficam registrados aqui
+              porque valem no dia em que este serviço mudar de hospedagem; <b>nenhum deles está
+              disponível enquanto o servidor estiver atrás do túnel.</b></p>
           </div>
 
           <div class="dom-porque">
             <article class="dom-motivo">
               <div class="dom-motivo-icone"><i data-lucide="cookie" aria-hidden="true"></i></div>
-              <h4>Cookie deixa de ser "de terceiro"</h4>
+              <h4>Cookie deixaria de ser "de terceiro"</h4>
               <p>Sem domínio próprio, o navegador vê o cookie de rastreamento como vindo de outro site — e some
                 mais cedo. <button type="button" class="ajuda" data-ajuda="dominio-first-party"></button></p>
             </article>
             <article class="dom-motivo">
               <div class="dom-motivo-icone"><i data-lucide="shield-off" aria-hidden="true"></i></div>
-              <h4>Bloqueadores de anúncio param de cortar</h4>
-              <p>Ad-blockers mantêm listas inteiras de domínios de rastreamento de terceiros — seu próprio
-                subdomínio não entra nelas. <button type="button" class="ajuda" data-ajuda="dominio-first-party"></button></p>
+              <h4>Bloqueadores de anúncio parariam de cortar</h4>
+              <p>Ad-blockers mantêm listas inteiras de domínios de rastreamento de terceiros — um subdomínio
+                seu não entraria nelas. <button type="button" class="ajuda" data-ajuda="dominio-first-party"></button></p>
             </article>
             <article class="dom-motivo">
               <div class="dom-motivo-icone"><i data-lucide="timer-off" aria-hidden="true"></i></div>
-              <h4>O cookie dura mais no Safari/iOS</h4>
+              <h4>O cookie duraria mais no Safari/iOS</h4>
               <p>O Safari (ITP) apaga cookies de terceiro em pouco tempo; cookies first-party sobrevivem bem
-                mais — mais eventos chegam com identidade completa. <button type="button" class="ajuda" data-ajuda="dominio-first-party"></button></p>
+                mais — mais eventos chegariam com identidade completa. <button type="button" class="ajuda" data-ajuda="dominio-first-party"></button></p>
             </article>
           </div>
 
           <div class="callout" style="margin-top:4px">
-            Resultado prático: mais eventos chegam com <code>fbc</code>/<code>fbclid</code> e <code>gclid</code>
-            preenchidos — a Meta e o Google casam a venda com o anúncio certo com mais frequência (melhor
-            correspondência/EMQ).
+            Seria esse o ganho: mais eventos com <code>fbc</code>/<code>fbclid</code> e <code>gclid</code>
+            preenchidos, e melhor correspondência/EMQ. No desenho de hoje esses identificadores chegam por
+            outro caminho — o site captura no checkout e o backend os manda no webhook, junto com a venda.
+            Quem mede se estão vindo completos é o painel de EMQ, no Dashboard.
           </div>
 
           <!-- ═══ TUTORIAL EM 3 PASSOS ═══ -->
-          <h3 class="section-t">Como configurar</h3>
-          <ol class="dom-tutorial">
+          <!-- Recolhido, não removido: o fluxo é o do deploy com IP público e volta a valer
+               inteiro se o serviço sair de trás do túnel. Deixá-lo aberto convidaria a
+               preencher um formulário que não conclui. -->
+          <details class="divulgacao" style="margin-top:22px">
+            <summary>Como seria a configuração (fluxo do deploy com IP público — não conclui aqui)</summary>
+            <p class="section-d" style="margin-top:10px">Os três passos abaixo são os do servidor com IP
+              público. Neste deploy, o passo 1 grava o domínio no banco e o passo 3 chega no máximo a
+              "DNS ok"; o certificado do passo seguinte não é emitido.</p>
+          <ol class="dom-tutorial" style="margin-top:14px">
             <li class="dom-tutorial-passo">
               <span class="dom-tutorial-n">1</span>
               <div class="dom-tutorial-corpo">
@@ -768,9 +809,14 @@
                   <details class="divulgacao dom-guia">
                     <summary>Onde fica isso na Cloudflare</summary>
                     <p class="section-d" style="margin-top:10px">
-                      <b>DNS → Records → Add record.</b> Escolha o Tipo (A ou CNAME), cole o Nome e o
-                      Conteúdo/Alvo mostrados acima, e deixe o <b>Proxy status</b> como "DNS only" (nuvem
-                      cinza) — com o proxy laranja ligado, o certificado deste servidor não consegue ser emitido.
+                      <b>DNS → Records → Add record.</b> Escolha o Tipo (A ou CNAME) e cole o Nome e o
+                      Conteúdo/Alvo mostrados acima. Sobre o <b>Proxy status</b>: esta tela já mandou deixar
+                      em "DNS only" (nuvem cinza) — <b>aqui é o contrário.</b> Quem leva o tráfego até este
+                      servidor é justamente o proxy da Cloudflare, que é a ponta do túnel; com a nuvem cinza
+                      não sobra caminho nenhum até ele. A instrução antiga valia para o deploy com IP público,
+                      em que o proxy laranja atrapalhava a emissão do certificado pelo próprio servidor.
+                      E o proxy só pode ser ligado em domínios que estejam <b>nesta</b> conta Cloudflare — é
+                      exatamente por isso que um domínio seu não fecha o ciclo.
                     </p>
                   </details>
                   <details class="divulgacao dom-guia">
@@ -795,14 +841,15 @@
               <span class="dom-tutorial-n">3</span>
               <div class="dom-tutorial-corpo">
                 <h4>Clique em Verificar</h4>
-                <p class="section-d">O botão <b>Verificar DNS</b> aparece em cada domínio já cadastrado, na lista abaixo. Enquanto o DNS não propagar, pode clicar de novo sem problema.</p>
+                <p class="section-d">O botão <b>Verificar DNS</b> aparece em cada domínio já cadastrado, na lista abaixo. Enquanto o DNS não propagar, pode clicar de novo sem problema. <b>Neste deploy é aqui que a trilha termina:</b> a verificação só confere DNS e leva o domínio até "DNS ok" (2 de 4) — o estágio seguinte depende do certificado, que não é emitido.</p>
               </div>
             </li>
           </ol>
+          </details>
 
           <!-- ═══ DOMÍNIOS DO PROJETO — linha do tempo de status ═══ -->
           <h3 class="section-t" style="margin-top:32px">Domínios do projeto</h3>
-          <p class="section-d">Cada domínio passa por 4 estágios até ficar ativo — o próprio painel acompanha, sem precisar decifrar um rótulo técnico.</p>
+          <p class="section-d">Cada domínio passa por 4 estágios até ficar ativo. <b>Neste deploy, parar no 2º ("DNS ok") é o estado final esperado</b> — "certificado emitido" e "ativo" só acendem quando o servidor emite o certificado sob demanda, o que não acontece atrás do túnel. Domínio parado em 2 de 4 aqui não é defeito nem fila; é o teto do desenho.</p>
           <div class="dom-list" id="domainList"><div class="dash-empty">Carregando…</div></div>
         </section>
 

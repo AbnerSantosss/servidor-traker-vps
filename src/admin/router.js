@@ -16,8 +16,9 @@ import { countIdentities, forgetUser } from '../db/repos/identities.js';
 import { estadoInstalacao } from '../db/repos/instalacao.js';
 import { requireAuth, requireAdmin } from './auth.js';
 import { publicBaseUrl, env } from '../config/env.js';
+import { baseFirstParty } from '../tenancy/first-party.js';
 import { log } from '../config/log.js';
-import { resolveDns, resolveOwnIps } from '../tenancy/dns-check.js';
+import { resolveDns, identidadeDoServidor } from '../tenancy/dns-check.js';
 import { clearTokenCache } from '../destinations/google-ads.js';
 import { explicarErro, truncarEMascarar } from '../destinations/erros-explicados.js';
 import {
@@ -38,7 +39,7 @@ export const adminRouter = Router();
  * ele só acompanha a resposta de UM projeto, nunca a listagem — não há motivo para
  * o segredo de todos os projetos trafegar toda vez que a barra lateral recarrega.
  */
-function publicProject(p) {
+function publicProject(p, base = publicBaseUrl()) {
   if (!p) return null;
   const meta = p.destinations.meta;
   const google = p.destinations.google;
@@ -57,16 +58,20 @@ function publicProject(p) {
     // navegador, histórico de DevTools e qualquer log de intermediário. Quem precisa
     // dele busca sob demanda em GET /projects/:id/ingest-token, que é auditado.
     temIngestToken: Boolean(p.ingestToken),
-    // URLs prontas para copiar na tela de instalação
+    // URLs prontas para copiar na tela de instalação, no domínio first-party do
+    // projeto quando existe um verificado (ver projetoPublico, logo abaixo).
     urls: {
-      base: publicBaseUrl(),
-      evento: `${publicBaseUrl()}/e/${p.slug}`,
-      coleta: `${publicBaseUrl()}/c/${p.slug}`,
-      scriptColetor: `${publicBaseUrl()}/s/${p.slug}.js`,
-      scriptTag: `${publicBaseUrl()}/t/${p.slug}.js`,
+      base,
+      evento: `${base}/e/${p.slug}`,
+      coleta: `${base}/c/${p.slug}`,
+      scriptColetor: `${base}/s/${p.slug}.js`,
+      scriptTag: `${base}/t/${p.slug}.js`,
       // Tag única do GTM (coletor + snippet + page_view) e tag única sem GTM.
-      scriptGtm: `${publicBaseUrl()}/g/${p.slug}.js`,
-      scriptUnica: `${publicBaseUrl()}/w/${p.slug}.js`,
+      // Precisam sair daqui e não ser deduzidas no painel: o painel só conhece a base
+      // da API (o host do serviço), e era justamente essa dedução que colocava o
+      // endereço errado no trecho de copiar-e-colar.
+      scriptGtm: `${base}/g/${p.slug}.js`,
+      scriptUnica: `${base}/w/${p.slug}.js`,
     },
     meta: {
       enabled: meta.enabled,
@@ -107,6 +112,16 @@ function publicProject(p) {
     },
   };
 }
+
+/**
+ * Projeto para o painel com os endereços já no domínio first-party dele.
+ *
+ * Toda resposta de projeto passa por aqui: os endereços de copiar-e-colar do painel
+ * precisam ser os mesmos que o servidor escreve dentro da tag (src/ingest/scripts.js),
+ * senão o operador colaria um endereço e o script chamaria outro. Sem domínio verificado,
+ * cai no host do serviço, como antes.
+ */
+const projetoPublico = async (p) => publicProject(p, await baseFirstParty(p?.id));
 
 // Envolve um handler async e converte exceção em resposta { error } com status certo.
 const wrap = (fn) => async (req, res) => {
@@ -161,8 +176,25 @@ adminRouter.get('/caddy/ask', wrap(async (req, res) => {
 
   if (situacao === 'pending') {
     const dns = await resolveDns(domain);
+    // Só prova positiva (`ok`) destrava. `inconclusivo` — o domínio resolve para um
+    // proxy anycast e a comparação por IP não decide nada — é NEGADO de propósito, e é
+    // aqui que este gate difere do painel: o painel só precisa parar de mentir, mas o
+    // gate precisa continuar negando por padrão.
+    //
+    // A tentação seria aceitar por "o handshake TLS com este SNI chegou até nós, logo o
+    // domínio aponta para cá". Não aponta: qualquer um abre uma conexão TLS contra o
+    // nosso IP com o SNI que quiser. Aceitar transformaria cada handshake forjado numa
+    // tentativa de emissão junto à Let's Encrypt — exatamente a cota que este gate
+    // existe para proteger.
+    //
+    // Consequência de onboarding, deliberada: um domínio com o proxy da Cloudflare
+    // LIGADO não consegue se provar por DNS. O caminho suportado é criar o CNAME com o
+    // proxy desligado ao menos até o domínio ficar `verified` — que é o que o painel
+    // instrui no texto do estado inconclusivo.
     if (!dns.ok) {
-      log('warn', 'emissão de certificado negada: DNS ainda não aponta para cá', { domain, motivo: dns.error });
+      log('warn', 'emissão de certificado negada: DNS ainda não aponta para cá', {
+        domain, situacao: dns.status, motivo: dns.error,
+      });
       return res.status(403).send('DNS não aponta para este servidor');
     }
     await setDomainStatus(domain, 'verified').catch(() => {});
@@ -179,7 +211,7 @@ adminRouter.use(requireAuth);
 
 adminRouter.get('/projects', wrap(async (_req, res) => {
   const projects = await listProjects();
-  res.json(projects.map(publicProject));
+  res.json(await Promise.all(projects.map(projetoPublico)));
 }));
 
 /**
@@ -199,14 +231,20 @@ adminRouter.get('/projects/:id/ingest-token', requireAdmin, wrap(async (req, res
  * Identidade pública do servidor: o host configurado e os IPs para os quais ele
  * resolve. É o dado que o painel precisa para dizer ao operador, com o número na
  * mão, qual registro A criar no DNS do cliente.
+ *
+ * `proxy` e `metodoRecomendado` completam a instrução: se o nosso host está atrás de
+ * um proxy compartilhado (Cloudflare), o IP que resolvemos é anycast e um registro A
+ * com ele NÃO entrega o tráfego aqui — a instrução correta passa a ser o CNAME.
  */
 adminRouter.get('/servidor', wrap(async (_req, res) => {
-  const host = String(env.PUBLIC_HOST).split(':')[0];
+  const identidade = await identidadeDoServidor();
   res.json({
-    publicHost: host,
+    publicHost: identidade.host,
     scheme: env.PUBLIC_SCHEME,
     baseUrl: publicBaseUrl(),
-    ips: await resolveOwnIps(),
+    ips: identidade.ips,
+    proxy: identidade.proxy,
+    metodoRecomendado: identidade.metodoRecomendado,
   });
 }));
 
@@ -216,12 +254,12 @@ adminRouter.post('/projects', wrap(async (req, res) => {
   // de verificação — é o começo do fluxo de onboarding de DNS.
   await addDomain(project.id, project.domain, { isPrimary: true }).catch(() => {});
   log('info', 'projeto criado', { project: project.id, domain: project.domain });
-  res.status(201).json(publicProject(project));
+  res.status(201).json(await projetoPublico(project));
 }));
 
 adminRouter.get('/projects/:id', wrap(async (req, res) => {
   const project = await loadProject(req, res);
-  if (project) res.json(publicProject(project));
+  if (project) res.json(await projetoPublico(project));
 }));
 
 adminRouter.delete('/projects/:id', wrap(async (req, res) => {
@@ -234,7 +272,7 @@ adminRouter.delete('/projects/:id', wrap(async (req, res) => {
 adminRouter.put('/projects/:id/status', wrap(async (req, res) => {
   if (!(await loadProject(req, res))) return;
   const status = req.body?.status === 'paused' ? 'paused' : 'active';
-  res.json(publicProject(await setProjectStatus(req.params.id, status)));
+  res.json(await projetoPublico(await setProjectStatus(req.params.id, status)));
 }));
 
 // Regenera o caminho de ingestão (quando uma blocklist aprende o caminho antigo).
@@ -242,7 +280,7 @@ adminRouter.post('/projects/:id/rotate-slug', wrap(async (req, res) => {
   if (!(await loadProject(req, res))) return;
   const project = await rotateSlug(req.params.id);
   log('info', 'slug de ingestão rotacionado', { project: project.id });
-  res.json(publicProject(project));
+  res.json(await projetoPublico(project));
 }));
 
 // ---------------------------------------------------------------- destinos
@@ -260,7 +298,7 @@ adminRouter.put('/projects/:id/meta', wrap(async (req, res) => {
     // Chave ausente = mantém o token atual (contrato do painel).
     credentials: { ...(b.accessToken !== undefined && { access_token: b.accessToken }) },
   });
-  res.json(publicProject(project));
+  res.json(await projetoPublico(project));
 }));
 
 adminRouter.put('/projects/:id/google', wrap(async (req, res) => {
@@ -292,7 +330,7 @@ adminRouter.put('/projects/:id/google', wrap(async (req, res) => {
   // operador veria o erro antigo persistir depois de já ter corrigido a credencial.
   if (b.refreshToken || b.clientSecret) clearTokenCache();
 
-  res.json(publicProject(project));
+  res.json(await projetoPublico(project));
 }));
 
 adminRouter.put('/projects/:id/postback', wrap(async (req, res) => {
@@ -308,7 +346,7 @@ adminRouter.put('/projects/:id/postback', wrap(async (req, res) => {
     },
     credentials: { ...(b.bearerToken !== undefined && { bearer_token: b.bearerToken }) },
   });
-  res.json(publicProject(project));
+  res.json(await projetoPublico(project));
 }));
 
 // ---------------------------------------------------------------- domínios first-party
@@ -747,7 +785,7 @@ adminRouter.put('/projects/:id/ia', requireAdmin, wrap(async (req, res) => {
   // que a chave foi removida/trocada por uma inválida).
   cacheModelosIA.delete(req.params.id);
   log('info', 'configuração de IA atualizada', { project: req.params.id, por: req.user.email });
-  res.json(publicProject(project));
+  res.json(await projetoPublico(project));
 }));
 
 // Botão "Carregar modelos" do painel não pode virar uma chamada à OpenRouter a cada

@@ -17,7 +17,7 @@
 import pg from 'pg';
 import { env } from '../config/env.js';
 import { log } from '../config/log.js';
-import { query } from './pool.js';
+import { parsePgConnectionString, query } from './pool.js';
 
 export const CANAL_EVENTOS = 'trk_eventos';
 export const CANAL_ENTREGAS = 'trk_entregas';
@@ -82,7 +82,10 @@ function proximaEsperaMs() {
 }
 
 async function conectar() {
-  const cliente = new pg.Client({ connectionString: env.DATABASE_URL });
+  // Mesmo tratamento da DATABASE_URL que o pool faz — ver parsePgConnectionString em
+  // pool.js. Passar a string crua aqui reintroduziria o defeito do `#` na senha só neste
+  // cliente: o pool conectaria, a aplicação subiria, e apenas o tempo real ficaria morto.
+  const cliente = new pg.Client(parsePgConnectionString(env.DATABASE_URL));
 
   cliente.on('notification', (msg) => {
     const callbacks = ouvintesPorCanal.get(msg.channel);

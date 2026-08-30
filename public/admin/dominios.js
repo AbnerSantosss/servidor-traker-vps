@@ -112,7 +112,7 @@ function renderDomains() {
     domEstado(list, {
       icone: 'globe',
       titulo: 'Nenhum domínio próprio ainda',
-      texto: 'O projeto continua funcionando pelo domínio deste servidor — siga o tutorial acima para apontar um subdomínio seu e ganhar cookies first-party.',
+      texto: 'O projeto coleta normalmente pelo domínio deste servidor. Cadastrar um subdomínio seu não muda isso neste deploy: o domínio para em "DNS ok" (2 de 4) e não chega a ficar ativo — veja o aviso no topo da aba.',
     });
     return;
   }
@@ -163,6 +163,18 @@ function domAtualizarTimeline(container, d) {
 // (mesmo princípio do dicionário de erros da aba Falhas: honestidade > adivinhação).
 function domTraduzirErro(erroCru) {
   if (!erroCru) return '';
+  // Inconclusivo NÃO é falha: é o servidor admitindo que a checagem por IP não decide
+  // nada quando o domínio está atrás de um proxy anycast. Antes, esse caso virava um
+  // "aponta para este servidor" falso — a frase aqui existe para não trocar uma mentira
+  // por outra ("não aponta") na hora de traduzir. Ver src/tenancy/dns-check.js.
+  const inconclusivo = erroCru.match(/^verificação inconclusiva: o domínio resolve para IPs da ([^,]+),/);
+  if (inconclusivo) {
+    const proxy = escHtml(inconclusivo[1]);
+    const alvo = escHtml((erroCru.match(/CNAME para ([^\s(]+)/) || [])[1] || baseHostname());
+    return `Não dá para confirmar por IP: este domínio está atrás da <b>${proxy}</b>, e esses IPs são compartilhados por milhões de sites — bater com o nosso não prova que o tráfego chega aqui. `
+      + `A verificação que vale é um <b>CNAME</b> apontando para <code>${alvo}</code>, com o proxy (nuvem laranja) <b>desligado</b> nesse registro. `
+      + `Enquanto o proxy estiver ligado, nenhuma consulta de DNS consegue confirmar o apontamento — e sem essa confirmação o certificado não é emitido.`;
+  }
   const apontaMatch = erroCru.match(/^aponta para (.+), esperado (.+)$/);
   if (apontaMatch) {
     return `O DNS ainda aponta para <b>${escHtml(apontaMatch[1])}</b>; o esperado é <b>${escHtml(apontaMatch[2])}</b> — a propagação pode levar de alguns minutos a algumas horas.`;
@@ -255,7 +267,10 @@ async function addDomain(e) {
   try {
     await api('/projects/' + state.selectedId + '/domains', { method: 'POST', body: { hostname, pointingMethod } });
     $('#domHostname').value = '';
-    toast('Domínio adicionado. Crie o registro no DNS (Passo 2 acima) e clique em "Verificar DNS".', 'ok');
+    // 'warn' e nao 'ok' de proposito: o cadastro grava no banco, mas o dominio nao
+    // fica ativo neste deploy (para em "DNS ok", 2 de 4). Um toast verde aqui faria o
+    // usuario esperar por uma etapa que nao vem — ver o aviso no topo da aba.
+    toast('Domínio cadastrado, mas ele não fica ativo neste servidor: a verificação chega no máximo a "DNS ok" (2 de 4). A coleta segue pelo domínio deste servidor.', 'warn', 7000);
     loadDomains();
   } catch (err) {
     toast('Erro ao adicionar domínio: ' + err.message, 'err');
@@ -366,7 +381,14 @@ function updateDomainInstruction() {
     + (ips.length
       ? `apontando para ${rotulo}: <code>${ips.map(escHtml).join('</code>, <code>')}</code>.`
         + (ips.length > 1 ? ' Crie um registro A para cada IP.' : '')
-      : 'apontando para o IP do servidor. Clique em <b>Verificar DNS</b> em qualquer domínio já cadastrado para o painel descobrir e mostrar o IP exato.');
+      : 'apontando para o IP do servidor. Clique em <b>Verificar DNS</b> em qualquer domínio já cadastrado para o painel descobrir e mostrar o IP exato.')
+    // Se o NOSSO host está atrás de um proxy compartilhado, o IP que resolvemos é
+    // anycast: um registro A com ele entrega o pacote no proxy, que não conhece a zona
+    // do cliente e devolve erro. Mandar copiar esse IP seria receita para um chamado de
+    // suporte. Ver `metodoRecomendado` em GET /api/servidor.
+    + (state.servidor && state.servidor.proxy
+      ? ` <b>Atenção:</b> este servidor responde atrás da ${escHtml(state.servidor.proxy)}, então esses IPs são compartilhados e um registro A com eles <b>não</b> traz o tráfego para cá — use o método <b>CNAME</b>.`
+      : '');
 }
 
 // ---------------- Bind (elemento estático do admin.html — ligado uma vez só) ----------------

@@ -17,6 +17,7 @@ import { adaptarPayload } from './adaptadores.js';
 import { capturarAmostra, carregarAdaptadoresAtivos } from '../db/repos/webhooks.js';
 import { hashearPiiParaPrompt } from '../ia/pii.js';
 import { log } from '../config/log.js';
+import { env } from '../config/env.js';
 import { rateLimit } from './rate-limit.js';
 
 export const ingestRouter = Router();
@@ -115,13 +116,33 @@ export function parseBody(req) {
   return data && typeof data === 'object' ? data : {};
 }
 
-// CORS: reflete a Origin quando o projeto a autoriza. Lista vazia = qualquer origem
-// (a tag pode estar em subdomínios variados); o controle real de abuso é o rate limit.
+/**
+ * Esta origem pode enviar evento para este projeto?
+ *
+ * Existe uma função só porque a resposta é consumida em DOIS lugares que precisam
+ * concordar: o cabeçalho de CORS (que instrui o navegador) e a recusa 403 (que é a
+ * proteção de verdade, no servidor). Divergirem produz o pior dos dois mundos — o
+ * navegador é autorizado a fazer a chamada e o servidor a rejeita, ou o inverso, com a
+ * resposta escondida do código que a pediu.
+ *
+ * Regras:
+ *  - `allowedOrigins` vazio = qualquer origem (a tag pode estar em subdomínios variados);
+ *    o controle real de abuso aí é o rate limit.
+ *  - a origem do PAINEL entra sempre, mesmo com a lista restrita: o console de testes
+ *    envia evento por esta rota, e sem isso ele morreria justamente nos projetos que
+ *    seguiram a recomendação de restringir as origens — o contrário do esperado.
+ */
+export function origemPermitida(origin, project) {
+  const doProjeto = project?.allowedOrigins || [];
+  if (!doProjeto.length) return true;
+  return doProjeto.includes(origin) || env.PANEL_ORIGINS.includes(origin);
+}
+
+// CORS: reflete a Origin quando ela é permitida (ver origemPermitida).
 export function applyCors(req, res, project) {
   const origin = req.headers.origin;
-  const allowed = project?.allowedOrigins || [];
   if (!origin) return;
-  if (!allowed.length || allowed.includes(origin)) {
+  if (origemPermitida(origin, project)) {
     res.set('Access-Control-Allow-Origin', origin);
     res.set('Vary', 'Origin');
     res.set('Access-Control-Allow-Credentials', 'true');
@@ -177,12 +198,12 @@ async function handleIngest(req, res) {
     return res.status(429).json({ error: 'limite de requisições excedido' });
   }
 
-  // Origin declarada e fora da lista do projeto: recusa de verdade, no servidor.
-  // Só o cabeçalho CORS não protege nada — ele instrui o navegador a esconder a
-  // resposta, mas a requisição já foi processada.
+  // Origin declarada e não permitida: recusa de verdade, no servidor. Só o cabeçalho
+  // CORS não protege nada — ele instrui o navegador a esconder a resposta, mas a
+  // requisição já foi processada. Mesma função do applyCors, de propósito: as duas
+  // decisões TÊM de ser a mesma.
   const origin = req.headers.origin;
-  const permitidas = project.allowedOrigins || [];
-  if (origin && permitidas.length && !permitidas.includes(origin)) {
+  if (origin && !origemPermitida(origin, project)) {
     return res.status(403).json({ error: 'origem não autorizada para este projeto' });
   }
 

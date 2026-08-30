@@ -50,6 +50,45 @@ export function corsDoPainel(req, res, next) {
 }
 
 /**
+ * O painel roda em outra ORIGEM, mas no mesmo SITE?
+ *
+ * Isto decide o `SameSite` do cookie de sessão, e a distinção importa porque `SameSite`
+ * é avaliado por *site* (domínio registrável), não por origem. `app.zyraflow.site` e
+ * `zyraflow.site` são origens diferentes — logo precisam de CORS — e o mesmo site — logo
+ * o cookie pode continuar `Lax`, preservando a defesa nativa contra CSRF de sites
+ * externos em vez de cair para `None`.
+ *
+ * A regra é deliberadamente conservadora: só considera mesmo site quando um host é igual
+ * ao outro ou é subdomínio dele. Decidir "mesmo domínio registrável" no caso geral exige
+ * a Public Suffix List (sem ela, `a.com.br` e `b.com.br` pareceriam o mesmo site, o que
+ * seria um `Lax` indevido e uma brecha). Quando a regra não reconhece, cai para `None` —
+ * que funciona igual, só sem o ganho do `Lax`. Errar para o lado seguro aqui significa,
+ * no pior caso, abrir mão de uma defesa extra; errar para o outro lado quebraria o login.
+ */
+export function painelEhSameSite() {
+  if (!env.PANEL_ORIGINS.length) return true; // mesma origem: nem se aplica
+
+  const hostDaApi = semPorta(env.PUBLIC_HOST);
+  if (!hostDaApi) return false;
+
+  // TODAS as origens do painel precisam ser same-site. Basta uma cross-site para que o
+  // cookie `Lax` não chegue nela — e um login que funciona em um host e falha em outro é
+  // pior de diagnosticar que um que nunca funciona.
+  return env.PANEL_ORIGINS.every((origem) => {
+    let host;
+    try { host = semPorta(new URL(origem).hostname); } catch { return false; }
+    if (!host) return false;
+    return host === hostDaApi
+      || host.endsWith('.' + hostDaApi)
+      || hostDaApi.endsWith('.' + host);
+  });
+}
+
+function semPorta(host) {
+  return String(host || '').toLowerCase().split(':')[0].replace(/\.$/, '');
+}
+
+/**
  * Proteção contra CSRF nas rotas de escrita.
  *
  * Com o front na mesma origem, o cookie é SameSite=Lax e o navegador já bloqueia envio

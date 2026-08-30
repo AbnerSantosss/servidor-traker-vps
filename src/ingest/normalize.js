@@ -77,6 +77,41 @@ export function gaClientIdFromCookie(value) {
   return parts.length >= 4 ? `${parts[2]}.${parts[3]}` : undefined;
 }
 
+// Alfabeto do fbclid: base64url. É SENSÍVEL A MAIÚSCULAS — `IwAR` e `iwar` são cliques
+// diferentes para a Meta, e um fbclid "consertado" (minúsculo, aparado, cortado) faz o
+// Gerenciador de Eventos acusar "valor fbclid modificado no parâmetro fbc".
+const FBCLID_RE = /^[A-Za-z0-9_-]+$/;
+
+/**
+ * Extrai o `fbclid` da query string da URL do evento, BYTE A BYTE.
+ *
+ * É a fonte mais confiável que existe para o fbclid deste clique: é exatamente o valor
+ * que a Meta lê da `event_source_url` para conferir contra o `fbc` que enviamos. E é a
+ * única fonte disponível em instalações que mandam a URL da página mas não o fbclid
+ * separado (o template do GTM, por exemplo).
+ *
+ * NÃO usa URLSearchParams nem decodeURIComponent de propósito: os dois "consertariam"
+ * o valor — `+` viraria espaço, `%XX` viraria outro byte — e o resultado seria
+ * justamente o fbclid modificado que este módulo existe para evitar. Valor fora do
+ * alfabeto base64url é ignorado (melhor não ter fbclid do que ter um adulterado).
+ */
+export function fbclidDaUrl(url) {
+  if (!url) return undefined;
+  const bruto = String(url);
+  const inicioQuery = bruto.indexOf('?');
+  if (inicioQuery === -1) return undefined;
+
+  const query = bruto.slice(inicioQuery + 1).split('#')[0];
+  for (const par of query.split('&')) {
+    const eq = par.indexOf('=');
+    if (eq === -1) continue;
+    if (par.slice(0, eq) !== 'fbclid') continue;
+    const valor = par.slice(eq + 1);
+    return FBCLID_RE.test(valor) ? valor : undefined;
+  }
+  return undefined;
+}
+
 /**
  * Gera o event_id quando o cliente não mandou.
  * Se houver um identificador de negócio (order_id / transaction_id), derivamos um ID
@@ -99,6 +134,45 @@ export function deriveEventId(body, eventName) {
   return crypto.randomUUID();
 }
 
+/**
+ * Campos de `custom_data` que também são aceitos soltos na raiz do payload.
+ *
+ * Todo o resto deste normalizador já aceita a forma solta — `user_data`, as utms, e o
+ * `order_id` que vira `event_id` em deriveEventId. `custom_data` era a única exceção, e
+ * a consequência era a pior possível: um backend que manda
+ * `{"event_name":"purchase","value":297.90,"currency":"BRL"}` recebia **202** e o valor
+ * era descartado em silêncio. Erro que parece sucesso, e que só aparece semanas depois no
+ * relatório de receita da Meta.
+ *
+ * Lista fechada, e de propósito: é o conjunto de `custom_data` da Meta. Copiar a raiz
+ * inteira arrastaria `user_id`, `event_name` e o que mais o cliente inventasse para
+ * dentro do objeto que vai para a plataforma.
+ */
+const CAMPOS_CUSTOM_DATA_NA_RAIZ = [
+  'value', 'currency', 'order_id', 'transaction_id', 'content_ids', 'content_name',
+  'content_type', 'content_category', 'contents', 'num_items', 'search_string',
+  'predicted_ltv', 'status',
+];
+
+/**
+ * `custom_data` do payload, completado pelos campos soltos na raiz.
+ * O que veio dentro de `custom_data` sempre ganha — a raiz só preenche o que falta.
+ */
+export function montarCustomData(body) {
+  const b = body || {};
+  const dentro = b.custom_data && typeof b.custom_data === 'object' && !Array.isArray(b.custom_data)
+    ? { ...b.custom_data }
+    : {};
+
+  for (const campo of CAMPOS_CUSTOM_DATA_NA_RAIZ) {
+    if (dentro[campo] !== undefined && dentro[campo] !== null && String(dentro[campo]).trim() !== '') continue;
+    const naRaiz = b[campo];
+    if (naRaiz === undefined || naRaiz === null || String(naRaiz).trim() === '') continue;
+    dentro[campo] = naRaiz;
+  }
+  return dentro;
+}
+
 export function normalizeEvent(body, { clientIp, userAgent, source = 'web', cookies = {} } = {}) {
   const b = body || {};
   const nowSec = Math.floor(Date.now() / 1000);
@@ -115,6 +189,13 @@ export function normalizeEvent(body, { clientIp, userAgent, source = 'web', cook
   const u = b.user_data || {};
   const user_id = first(b.user_id, u.user_id, u.external_id);
 
+  const event_source_url = first(b.page_location, b.event_source_url, b.url) || '';
+  // O fbclid da URL do evento vence os demais: ele é o clique DESTA visita, enquanto o
+  // que vem do localStorage/ponte de identidade pode ser o clique anterior (a captura é
+  // sticky de propósito, para sobreviver à navegação interna). Mandar o antigo com a URL
+  // do novo do lado é o que faz a Meta acusar fbclid modificado no fbc.
+  const fbclidDoClique = fbclidDaUrl(event_source_url);
+
   // Camada aberta (F9/E9): qualquer identificador que o servidor não conhece nomeado,
   // capturado pelo site por allowlist de query string e repassado aqui. Sanitizado de
   // novo no servidor mesmo que a tag já filtre no navegador — nunca se confia em
@@ -129,7 +210,7 @@ export function normalizeEvent(body, { clientIp, userAgent, source = 'web', cook
     event_name,
     event_time,
     source,
-    event_source_url: first(b.page_location, b.event_source_url, b.url) || '',
+    event_source_url,
     // `action_source` descreve ONDE a conversão aconteceu, não quem enviou o evento.
     // Uma compra feita no site e apenas confirmada pelo backend é `website` —
     // `system_generated` é para conversão sem origem no site e atribui pior.
@@ -157,7 +238,9 @@ export function normalizeEvent(body, { clientIp, userAgent, source = 'web', cook
       // bloqueador), o valor ainda chega pelo header Cookie.
       fbp: first(u.fbp, b.fbp, cookies._fbp),
       fbc: first(u.fbc, b.fbc, cookies._fbc),
-      fbclid: first(u.fbclid, b.fbclid),
+      // Ordem deliberada: a URL do evento primeiro (ver `fbclidDoClique` acima). Nunca
+      // normalizado — o valor segue byte a byte como chegou do parâmetro `?fbclid=`.
+      fbclid: first(fbclidDoClique, u.fbclid, b.fbclid),
       gclid: first(u.gclid, b.gclid, gclidFromCookie(cookies._gcl_aw)),
       // client_id do GA4, necessário para o Measurement Protocol.
       ga_client_id: first(u.ga_client_id, b.ga_client_id, gaClientIdFromCookie(cookies._ga)),
@@ -210,7 +293,7 @@ export function normalizeEvent(body, { clientIp, userAgent, source = 'web', cook
       // Camada aberta de identificadores (ver comentário acima, junto de `clickIds`).
       ...(Object.keys(clickIds).length ? { click_ids: clickIds } : {}),
     },
-    custom_data: b.custom_data || {},
+    custom_data: montarCustomData(b),
     consent_state: normalizeConsent(b.consent_state || b.consent),
     page: {
       path: b.page_path,
